@@ -40,32 +40,30 @@ check_git_update() {
 deploy_repo_skills() {
     local repo_dir=$1
     local repo_name=$(basename "$repo_dir")
-    
-    # 获取更新前的技能列表（用于对比删除）
-    local old_skills=$(find "$repo_dir" -name "SKILL.md" | xargs -I {} dirname {} | xargs -I {} basename {} 2>/dev/null || true)
-    
-    # 同步新技能
+    local old_skills_file=$2  # 可选：旧技能列表文件
+
+    # 1. 同步当前所有技能
     find "$repo_dir" -name "SKILL.md" | while read -r skill_md; do
         skill_src_dir=$(dirname "$skill_md")
         skill_id=$(basename "$skill_src_dir")
-        # 跳过仓库根目录本身（如果根目录有 SKILL.md，通常这表示这个仓库本身就是一个技能）
         [ "$skill_src_dir" == "$repo_dir" ] && continue
         
-        # 简单比对 MD5 或直接覆盖（由于技能体积小，直接覆盖比较稳健）
+        # 覆盖安装
         rm -rf "$SKILLS_DIR/$skill_id"
         cp -r "$skill_src_dir" "$SKILLS_DIR/$skill_id"
     done
 
-    # 获取更新后的新技能列表
-    local new_skills=$(find "$repo_dir" -name "SKILL.md" | xargs -I {} dirname {} | xargs -I {} basename {} 2>/dev/null || true)
-
-    # 清理仓库内已移除的技能
-    for old_s in $old_skills; do
-        if [[ ! " $new_skills " =~ " $old_s " ]]; then
-            echo "[ManageSkills] 清理仓库 $repo_name 内已删除技能: $old_s"
-            rm -rf "$SKILLS_DIR/$old_s"
-        fi
-    done
+    # 2. 如果提供了旧列表，清理已移除的技能
+    if [ -n "$old_skills_file" ] && [ -f "$old_skills_file" ]; then
+        local new_skills=$(find "$repo_dir" -name "SKILL.md" | xargs -I {} dirname {} | xargs -I {} basename {} 2>/dev/null || true)
+        while read -r old_s; do
+            [ -z "$old_s" ] && continue
+            if ! echo "$new_skills" | grep -qxw "$old_s"; then
+                echo "[ManageSkills] 清理仓库 $repo_name 内已删除技能: $old_s"
+                rm -rf "$SKILLS_DIR/$old_s"
+            fi
+        done < "$old_skills_file"
+    fi
 }
 
 # --- 1. 读取列表与分类 ---
@@ -118,15 +116,20 @@ for repo in "${SKILL_REPOS[@]}"; do
 
     if [ ! -d "$local_cache" ]; then
         echo "[ManageSkills] 克隆新仓库: $repo_name"
-        timeout 60s git clone --depth 1 "$repo" "$local_cache" &>/dev/null || { echo "[ManageSkills] 克隆 $repo 失败"; continue; }
+        timeout 60s git clone --quiet --depth 1 "$repo" "$local_cache" &>/dev/null || { echo "[ManageSkills] 克隆 $repo 失败"; continue; }
         deploy_repo_skills "$local_cache"
         CHANGED=1
     else
         # 检查并更新
         if check_git_update "$local_cache"; then
             echo "[ManageSkills] 更新仓库: $repo_name"
+            # 记录更新前的技能列表
+            OLD_SKILLS_FILE=$(mktemp)
+            find "$local_cache" -name "SKILL.md" | xargs -I {} dirname {} | xargs -I {} basename {} 2>/dev/null > "$OLD_SKILLS_FILE" || true
+            
             git -C "$local_cache" pull --quiet
-            deploy_repo_skills "$local_cache"
+            deploy_repo_skills "$local_cache" "$OLD_SKILLS_FILE"
+            rm -f "$OLD_SKILLS_FILE"
             CHANGED=1
         fi
     fi

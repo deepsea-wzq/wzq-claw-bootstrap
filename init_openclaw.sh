@@ -38,17 +38,19 @@ else
     timeout 60s git -C "$EXT_DIR" pull
 fi
 
-# 关键修复：增量处理信任名单。如果当前插件缺失导致死锁，尝试只在 allow 中移除自己（如果存在）
-CURRENT_ALLOW=$(openclaw config get "plugins.allow" 2>/dev/null || echo "[]")
-if [[ $CURRENT_ALLOW == *"wzq-channel"* ]] && [ ! -d "$HOME/.openclaw/extensions/wzq-channel" ]; then
-    echo "检测到 wzq-channel 在信任名单但目录缺失，正在执行增量清理以解除死锁..."
-    # 简单的正则替换，移除数组中的 "wzq-channel"
-    CLEAN_ALLOW=$(echo "$CURRENT_ALLOW" | sed 's/"wzq-channel"//g; s/,,/,/g; s/\[,/[/g; s/,]/]/g')
-    openclaw config set "plugins.allow" "$CLEAN_ALLOW" --strict-json || true
+# 关键修复：增量处理信任名单。如果当前插件缺失导致死锁（CLI 无法启动），直接修正配置文件
+CLAW_CONFIG="$HOME/.openclaw/openclaw.json"
+if [ -f "$CLAW_CONFIG" ]; then
+    if ! openclaw config get "plugins.allow" &>/dev/null; then
+        echo "检测到 wzq-channel 可能导致配置死锁，正在执行强力清理以解除限制..."
+        # 移除可能导致校验失败的插件项
+        sed -i 's/"wzq-channel"//g; s/,,/,/g; s/\[,/[/g; s/,]/]/g' "$CLAW_CONFIG"
+    fi
 fi
 
 # 使用官方命令从本地缓存目录安装插件
-openclaw plugins install "$EXT_DIR"
+echo "正在执行插件安装..."
+openclaw plugins install "$EXT_DIR" || { echo "插件安装失败"; exit 1; }
 
 echo ">>> [4/6] 写入 openclaw.json 配置 (增量设置)..."
 # 1. 启用插件系统并设置 wzq-channel 状态
