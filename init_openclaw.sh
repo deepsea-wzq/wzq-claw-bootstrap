@@ -35,7 +35,7 @@ SKILL_REPOS=(
     "https://github.com/deepsea-wzq/wzq-skills"
     "https://github.com/anthropics/skills"
     "https://github.com/peterskoett/self-improving-agent.git"
-    "clawhub:JimLiuxinghai/find-skills"
+    "clawhub:find-skills"
 )
 
 for repo in "${SKILL_REPOS[@]}"; do
@@ -43,7 +43,7 @@ for repo in "${SKILL_REPOS[@]}"; do
         slug=${repo#clawhub:}
         echo "使用 clawhub CLI 安装技能: $slug"
         # 使用 npx clawhub 直接安装到技能目录
-        timeout 60s npx clawhub install "$slug" --workdir "$OPENCLAW_HOME" --dir "skills" --no-input || echo "安装 $slug 失败，跳过"
+        timeout 60s npx clawhub --workdir "$OPENCLAW_HOME" --dir "skills" --no-input install "$slug" || echo "安装 $slug 失败，跳过"
         continue
     fi
 
