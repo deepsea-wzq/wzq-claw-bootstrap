@@ -42,8 +42,19 @@ for repo in "${SKILL_REPOS[@]}"; do
     if [[ $repo == clawhub:* ]]; then
         slug=${repo#clawhub:}
         echo "使用 clawhub CLI 安装技能: $slug"
-        # 使用 npx clawhub 直接安装到技能目录
-        timeout 60s npx clawhub --workdir "$OPENCLAW_HOME" --dir "skills" --no-input install "$slug" || echo "安装 $slug 失败，跳过"
+        # 增加重试逻辑以应对 Rate limit
+        max_retries=2
+        retry_count=0
+        until [ $retry_count -ge $max_retries ]
+        do
+            timeout 60s npx clawhub --workdir "$OPENCLAW_HOME" --dir "skills" --no-input install "$slug" && break
+            retry_count=$((retry_count+1))
+            echo "安装 $slug 失败（重试 $retry_count/$max_retries），稍后重试..."
+            sleep 2
+        done
+        if [ $retry_count -eq $max_retries ]; then
+            echo "安装 $slug 最终失败，跳过"
+        fi
         continue
     fi
 
@@ -76,6 +87,10 @@ if [ ! -d "$EXT_DIR/.git" ]; then
 else
     timeout 60s git -C "$EXT_DIR" pull
 fi
+
+# 关键修复：先移除冲突配置和旧插件目录，确保 openclaw 能够顺利启动并重新安装
+openclaw config unset "plugins.allow" || true
+rm -rf "$HOME/.openclaw/extensions/wzq-channel"
 
 # 使用官方命令从本地缓存目录安装插件
 openclaw plugins install "$EXT_DIR"
