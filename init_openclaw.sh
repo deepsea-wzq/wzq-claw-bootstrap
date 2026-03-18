@@ -33,11 +33,19 @@ mkdir -p "$SKILLS_DIR"
 SKILL_REPOS=(
     "https://github.com/deepsea-wzq/wzq-skills"
     "https://github.com/anthropics/skills"
-    "https://clawhub.ai/JimLiuxinghai/find-skills"
-    "https://clawhub.ai/pskoett/self-improving-agent"
+    "https://github.com/peterskoett/self-improving-agent.git"
+    "clawhub:JimLiuxinghai/find-skills"
 )
 
 for repo in "${SKILL_REPOS[@]}"; do
+    if [[ $repo == clawhub:* ]]; then
+        slug=${repo#clawhub:}
+        echo "使用 clawhub CLI 安装技能: $slug"
+        # 使用 npx clawhub 直接安装到技能目录
+        timeout 60s npx clawhub install "$slug" --workdir "$OPENCLAW_HOME" --dir "skills" --no-input || echo "安装 $slug 失败，跳过"
+        continue
+    fi
+
     repo_name=$(basename "$repo" .git)
     local_cache="$SKILLS_CACHE/$repo_name"
     
@@ -78,7 +86,21 @@ echo ">>> [4/6] 写入 openclaw.json 配置 (使用 openclaw config set)..."
 openclaw config set "models.providers.$LLM_PROVIDER_NAME.baseUrl" "$LLM_BASE_URL"
 openclaw config set "models.providers.$LLM_PROVIDER_NAME.apiKey" "$LLM_API_KEY"
 openclaw config set "models.providers.$LLM_PROVIDER_NAME.api" "openai-completions"
-openclaw config set "models.providers.$LLM_PROVIDER_NAME.models" '["MiniMax-M2.5-highspeed", "MiniMax-M2.5"]' --strict-json
+# 修复 Minimax 配置验证失败问题：确保 models 是一个完整描述的对象数组
+openclaw config set "models.providers.$LLM_PROVIDER_NAME.models" '[
+  {
+    "id": "MiniMax-M2.5",
+    "name": "MiniMax M2.5",
+    "contextWindow": 200000,
+    "maxTokens": 8192
+  },
+  {
+    "id": "MiniMax-M2.5-highspeed",
+    "name": "MiniMax M2.5 Highspeed",
+    "contextWindow": 200000,
+    "maxTokens": 8192
+  }
+]' --strict-json
 openclaw config set "agents.defaults.model.primary" "$LLM_PROVIDER_NAME/MiniMax-M2.5-highspeed"
 
 # Channel 配置
@@ -87,7 +109,8 @@ openclaw config set "channels.wzq-channel.wsUrl" "$USER_WS_URL"
 openclaw config set "channels.wzq-channel.token" "$USER_WS_TOKEN"
 openclaw config set "channels.wzq-channel.allowFrom" '["*"]' --strict-json
 
-# 插件启用
+# 插件启用与信任设置
+openclaw config set "plugins.allow" '["wzq-channel"]' --strict-json
 openclaw config set "plugins.entries.wzq-channel.enabled" true
 
 echo ">>> [5/6] 重启 gateway 服务..."
