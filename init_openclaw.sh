@@ -112,7 +112,7 @@ openclaw config set "channels.wzq-channel" "{
     \"default\": {
       \"enabled\": true,
       \"token\": \"$USER_WS_TOKEN\",
-      \"fileUrl\":\"https://wzq.tenpay.com/svr/openclaw/agent/get_image\"
+      \"fileUrl\":\"https://wzq.tenpay.com/svr/openclaw/agent/get_image\",
       \"wsUrl\": \"wss://wzq.tenpay.com/ws/openclaw\"
     }
   }
