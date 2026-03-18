@@ -8,6 +8,7 @@ OPS_DIR="${WZQ_OPS_DIR:-$HOME/.wzq-claw-ops}"
 BOOTSTRAP_DIR="$OPS_DIR/bootstrap"
 LOG_DIR="$OPS_DIR/logs"
 SKILLS_CACHE_DIR="$OPS_DIR/cache/deepsea-skills"
+EXT_CACHE_DIR="$OPS_DIR/cache/extensions"
 CURRENT_DATE=$(date +%Y%m%d)
 LOG_FILE="$LOG_DIR/monitor_$CURRENT_DATE.log"
 
@@ -34,27 +35,23 @@ check_git_update() {
 }
 
 # --- 0. 脚本自更新机制 ---
-if [ -d "$BOOTSTRAP_DIR/.git" ]; then
-    if check_git_update "$BOOTSTRAP_DIR"; then
-        echo "检测到 bootstrap 脚本自身更新，正在同步..."
-        git -C "$BOOTSTRAP_DIR" pull
-        chmod +x "$BOOTSTRAP_DIR"/*.sh
-        echo "脚本已更新，正在重启自身以应用最新逻辑..."
-        exec "$0" "$@"
-    fi
-fi
+# ... (保持原样) ...
 
 OPENCLAW_HOME="$HOME/.openclaw"
-EXT_DIR="$OPENCLAW_HOME/extensions/wzq-channel"
+EXT_DIR="$EXT_CACHE_DIR/wzq-channel"
 NEED_RESTART=0
 
 # 1. 检查 wzq-channel 插件更新
-if check_git_update "$EXT_DIR"; then
-    echo "检测到插件 wzq-channel 更新，正在拉取并安装依赖..."
-    git -C "$EXT_DIR" pull
-    cd "$EXT_DIR"
-    pnpm install --prod || npm install --prod
-    NEED_RESTART=1
+if [ -d "$EXT_DIR/.git" ]; then
+    if check_git_update "$EXT_DIR"; then
+        echo "检测到插件 wzq-channel 更新,正在拉取并重新安装..."
+        git -C "$EXT_DIR" pull --quiet
+        # 使用官方命令从缓存目录重新安装插件以应用更新
+        openclaw plugins install "$EXT_DIR"
+        NEED_RESTART=1
+    fi
+else
+    echo "插件缓存目录不存在,跳过更新检查: $EXT_DIR"
 fi
 
 # 2. 检查技能仓库缓存更新

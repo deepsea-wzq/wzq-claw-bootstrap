@@ -9,11 +9,12 @@ set -e
 OPS_DIR="${WZQ_OPS_DIR:-$HOME/.wzq-claw-ops}"
 LOG_DIR="$OPS_DIR/logs"
 SKILLS_CACHE="$OPS_DIR/cache/deepsea-skills"
+EXT_CACHE="$OPS_DIR/cache/extensions"
 CURRENT_DATE=$(date +%Y%m%d)
 LOG_FILE="$LOG_DIR/init_$CURRENT_DATE.log"
 
 # 初始化目录并记录日志
-mkdir -p "$LOG_DIR" "$SKILLS_CACHE"
+mkdir -p "$LOG_DIR" "$SKILLS_CACHE" "$EXT_CACHE"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 echo ">>> [1/6] 环境变量同步与注入..."
@@ -24,7 +25,7 @@ LLM_PROVIDER_NAME=${LLM_PROVIDER_NAME:-"minimax"}
 
 USER_WS_URL=${USER_WS_URL:-"wss://wzq.tenpay.com/ws/openclaw"}
 USER_WS_TOKEN=${WZQ_APIKEY:-${USER_WS_TOKEN:-"user-token-xyz"}}
-ss
+
 echo ">>> [2/6] 拉取并部署深海技能..."
 OPENCLAW_HOME="$HOME/.openclaw"
 SKILLS_DIR="$OPENCLAW_HOME/skills"
@@ -68,22 +69,26 @@ for repo in "${SKILL_REPOS[@]}"; do
     done
 done
 
-echo ">>> [3/6] 拉取并部署 wzq-channel 插件..."
-EXT_DIR="$OPENCLAW_HOME/extensions/wzq-channel"
-mkdir -p "$(dirname "$EXT_DIR")"
+echo ">>> [3/6] 安装 wzq-channel 插件..."
+EXT_DIR="$EXT_CACHE/wzq-channel"
 if [ ! -d "$EXT_DIR/.git" ]; then
-    timeout 60s git clone "https://github.com/deepsea-wzq/wzq_channel" "$EXT_DIR" || { echo "拉取插件失败"; exit 1; }
+    timeout 60s git clone --depth 1 "https://github.com/deepsea-wzq/wzq_channel" "$EXT_DIR" || { echo "拉取插件失败"; exit 1; }
 else
     timeout 60s git -C "$EXT_DIR" pull
 fi
 
-echo "安装插件运行时依赖..."
-cd "$EXT_DIR"
-timeout 300s pnpm install --prod || npm install --prod
+# 使用官方命令从本地缓存目录安装插件
+openclaw plugins install "$EXT_DIR"
 
 echo ">>> [4/6] 写入 openclaw.json 配置 (使用 openclaw config set)..."
-# 优先设置插件信任名单，防止后续配置命令触发警告
-openclaw config set "plugins.allow" '["wzq-channel"]' --strict-json
+# 优先配置并启用插件系统（包含信任名单），防止后续配置命令触发警告
+openclaw config set "plugins" "{
+  \"enabled\": true,
+  \"allow\": [\"wzq-channel\"],
+  \"entries\": {
+    \"wzq-channel\": { \"enabled\": true }
+  }
+}" --strict-json
 
 # 模型配置 (使用全量 JSON 写入方式)
 openclaw config set "models.providers.$LLM_PROVIDER_NAME" "{
@@ -108,16 +113,16 @@ openclaw config set "models.providers.$LLM_PROVIDER_NAME" "{
 
 openclaw config set "agents.defaults.model.primary" "$LLM_PROVIDER_NAME/MiniMax-M2.5-highspeed"
 
-# 1. 配置渠道
-openclaw config set "channels.wzq-channel.enabled" true
-openclaw config set "channels.wzq-channel.wsUrl" "$USER_WS_URL"
-openclaw config set "channels.wzq-channel.token" "$USER_WS_TOKEN"
-openclaw config set "channels.wzq-channel.allowFrom" '["*"]' --strict-json
+# 1. 配置渠道 (合并为一次全量写入)
+openclaw config set "channels.wzq-channel" "{
+  \"enabled\": true,
+  \"wsUrl\": \"$USER_WS_URL\",
+  \"token\": \"$USER_WS_TOKEN\",
+  \"allowFrom\": [\"*\"]
+}" --strict-json
 
-# 2. 启用插件系统及具体插件
-openclaw config set "plugins.enabled" true
-openclaw config set "plugins.entries.wzq-channel.enabled" true
-
+# 2. 启用插件系统及具体插件（已在 plugins 全量配置中合并设置）
+# 3. 渠道配置已完成，执行收尾逻辑
 echo ">>> [5/6] 重启 gateway 服务..."
 # 确保服务已安装（新版本 OpenClaw 需先执行 install）
 openclaw gateway install || true
