@@ -21,9 +21,10 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 echo ">>> [1/4] 检查并获取业务变量..."
 
-# 建议通过: WZQ_APIKEY=xxx WZQ_LLMKEY=yyy bash deploy_entry.sh 方式调用
+# 建议通过: WZQ_APIKEY=xxx WZQ_LLMKEY=yyy WZQ_SKILLS_TOKEN=zzz bash deploy_entry.sh 方式调用
 API_KEY=${WZQ_APIKEY}
 LLM_KEY=${WZQ_LLMKEY}
+SKILLS_TOKEN=${WZQ_SKILLS_TOKEN}
 
 if [ -z "$API_KEY" ] || [ -z "$LLM_KEY" ]; then
     echo "错误: 必须提供 WZQ_APIKEY 和 WZQ_LLMKEY"
@@ -49,6 +50,7 @@ inject_env() {
 
 inject_env "WZQ_APIKEY" "$API_KEY"
 inject_env "WZQ_LLMKEY" "$LLM_KEY"
+[ -n "$SKILLS_TOKEN" ] && inject_env "WZQ_SKILLS_TOKEN" "$SKILLS_TOKEN"
 inject_env "WZQ_OPS_DIR" "$OPS_DIR"
 # 修改 inject_env 调用方式，对 PATH 使用特殊的检查逻辑
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then

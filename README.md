@@ -20,7 +20,7 @@
 在目标机器执行（需预先设置环境变量）：
 
 ```bash
-WZQ_APIKEY=xxx WZQ_LLMKEY=yyy bash <(curl -sL https://raw.githubusercontent.com/deepsea-wzq/wzq-claw-bootstrap/main/deploy_entry.sh)
+WZQ_APIKEY=xxx WZQ_LLMKEY=yyy WZQ_SKILLS_TOKEN=your_github_pat_here bash <(curl -sL https://raw.githubusercontent.com/deepsea-wzq/wzq-claw-bootstrap/main/deploy_entry.sh)
 ```
 
 ## 4. 运维指南

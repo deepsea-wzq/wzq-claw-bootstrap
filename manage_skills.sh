@@ -114,13 +114,32 @@ for repo in "${SKILL_REPOS[@]}"; do
     repo_name=$(basename "$repo" .git)
     local_cache="$SKILLS_CACHE_DIR/$repo_name"
 
+    # 特殊处理 wzq-skills 的私有令牌
+    current_repo_url="$repo"
+    if [[ "$repo_name" == "wzq-skills" ]]; then
+        if [ -n "$WZQ_SKILLS_TOKEN" ]; then
+            # 注入私有令牌，支持 x492876854 账号。如果 token 已包含在 repo URL 中，则跳过注入。
+            if [[ "$repo" != *"@"* ]]; then
+                current_repo_url="${repo/https:\/\/github.com\//https:\/\/x492876854:${WZQ_SKILLS_TOKEN}@github.com\/}"
+                echo "[ManageSkills] 环境变量检测到令牌，尝试私有访问 $repo_name"
+            fi
+        else
+            echo "[ManageSkills] 未检测到令牌，尝试使用原链接直接访问 $repo_name"
+        fi
+    fi
+
     if [ ! -d "$local_cache" ]; then
         echo "[ManageSkills] 克隆新仓库: $repo_name"
-        timeout 60s git clone --quiet --depth 1 "$repo" "$local_cache" &>/dev/null || { echo "[ManageSkills] 克隆 $repo 失败"; continue; }
+        timeout 60s git clone --quiet --depth 1 "$current_repo_url" "$local_cache" &>/dev/null || { echo "[ManageSkills] 克隆 $repo_name 失败"; continue; }
         deploy_repo_skills "$local_cache"
         CHANGED=1
     else
         # 检查并更新
+        # 针对 wzq-skills，始终同步远程地址以反映当前环境变量状态（令牌可能增加或移除）
+        if [[ "$repo_name" == "wzq-skills" ]]; then
+             git -C "$local_cache" remote set-url origin "$current_repo_url"
+        fi
+
         if check_git_update "$local_cache"; then
             echo "[ManageSkills] 更新仓库: $repo_name"
             # 记录更新前的技能列表
