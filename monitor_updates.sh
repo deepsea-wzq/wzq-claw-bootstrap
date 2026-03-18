@@ -54,15 +54,30 @@ if [ -d "$EXT_DIR/.git" ]; then
         echo "检测到插件 wzq-channel 更新, 正在拉取并重新安装..."
         git -C "$EXT_DIR" pull --quiet
         
-        # 增量处理可能存在的死锁（仅清理 wzq-channel）
-        CURRENT_ALLOW=$(openclaw config get "plugins.allow" 2>/dev/null || echo "[]")
-        if [[ $CURRENT_ALLOW == *"wzq-channel"* ]]; then
-             CLEAN_ALLOW=$(echo "$CURRENT_ALLOW" | sed 's/"wzq-channel"//g; s/,,/,/g; s/\[,/[/g; s/,]/]/g')
-             openclaw config set "plugins.allow" "$CLEAN_ALLOW" --strict-json || true
+        # 关键修复：处理可能存在的死锁。如果当前插件更新导致配置校验失败（CLI 无法启动），直接修正配置文件
+        CLAW_CONFIG="$OPENCLAW_HOME/openclaw.json"
+        if [ -f "$CLAW_CONFIG" ]; then
+            if ! openclaw config get "plugins.allow" &>/dev/null; then
+                echo "检测到 wzq-channel 可能导致配置死锁，正在执行强力清理以解除限制..."
+                sed -i 's/"wzq-channel"//g; s/,,/,/g; s/\[,/[/g; s/,]/]/g' "$CLAW_CONFIG"
+            fi
         fi
         
-        rm -rf "$OPENCLAW_HOME/extensions/wzq-channel"
-        openclaw plugins install "$EXT_DIR"
+        echo "正在执行插件手动安装 (复制源码与安装依赖)..."
+        PLUGIN_TARGET_DIR="$OPENCLAW_HOME/extensions/wzq-channel"
+        mkdir -p "$OPENCLAW_HOME/extensions"
+        rm -rf "$PLUGIN_TARGET_DIR"
+        cp -r "$EXT_DIR" "$PLUGIN_TARGET_DIR"
+
+        # 手动安装依赖 (优先使用 pnpm)
+        echo "正在执行插件依赖安装 (pnpm/npm install)..."
+        (cd "$PLUGIN_TARGET_DIR" && {
+            if command -v pnpm &> /dev/null; then
+                pnpm install --prod
+            else
+                npm install
+            fi
+        }) || { echo "插件依赖安装失败"; exit 1; }
         
         # 补齐配置：增量启用插件并加入信任名单
         openclaw config set "plugins.enabled" true

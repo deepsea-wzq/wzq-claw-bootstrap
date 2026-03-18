@@ -48,9 +48,22 @@ if [ -f "$CLAW_CONFIG" ]; then
     fi
 fi
 
-# 使用官方命令从本地缓存目录安装插件
-echo "正在执行插件安装..."
-openclaw plugins install "$EXT_DIR" || { echo "插件安装失败"; exit 1; }
+# 改为手工安装：OpenClaw 官方命令可能存在依赖安装不完全或死锁的问题
+echo "正在手动安装插件 (复制源码与安装依赖)..."
+PLUGIN_TARGET_DIR="$HOME/.openclaw/extensions/wzq-channel"
+mkdir -p "$HOME/.openclaw/extensions"
+rm -rf "$PLUGIN_TARGET_DIR"
+cp -r "$EXT_DIR" "$PLUGIN_TARGET_DIR"
+
+# 手动安装依赖 (优先使用 pnpm，因为 OpenClaw 自身使用 pnpm)
+echo "正在执行插件依赖安装 (pnpm/npm install)..."
+(cd "$PLUGIN_TARGET_DIR" && {
+    if command -v pnpm &> /dev/null; then
+        pnpm install --prod
+    else
+        npm install
+    fi
+}) || { echo "插件依赖安装失败"; exit 1; }
 
 echo ">>> [4/6] 写入 openclaw.json 配置 (增量设置)..."
 # 1. 启用插件系统并设置 wzq-channel 状态
