@@ -132,6 +132,6 @@ echo ">>> [6/6] 配置定时监控任务 (Crontab)..."
 MONITOR_SCRIPT="$OPS_DIR/bootstrap/monitor_updates.sh"
 # 日志重定向由脚本内部处理，Crontab 仅负责触发
 CRON_JOB="*/5 * * * * $MONITOR_SCRIPT"
-(crontab -l 2>/dev/null | grep -v "$MONITOR_SCRIPT"; echo "$CRON_JOB") | crontab -
+(crontab -l 2>/dev/null | grep -v "$MONITOR_SCRIPT" || true; echo "$CRON_JOB") | crontab -
 
 echo "OpenClaw 初始化脚本执行完毕！"
