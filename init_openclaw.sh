@@ -55,13 +55,17 @@ mkdir -p "$HOME/.openclaw/extensions"
 rm -rf "$PLUGIN_TARGET_DIR"
 cp -r "$EXT_DIR" "$PLUGIN_TARGET_DIR"
 
-# 手动安装依赖 (优先使用 pnpm，因为 OpenClaw 自身使用 pnpm)
-echo "正在执行插件依赖安装 (pnpm/npm install)..."
+# 手动安装依赖 (优先使用 npm)
+echo "正在执行插件依赖安装 (npm install)..."
 (cd "$PLUGIN_TARGET_DIR" && {
-    if command -v pnpm &> /dev/null; then
+    if command -v npm &> /dev/null; then
+        npm install
+    elif command -v pnpm &> /dev/null; then
+        echo "警告: npm 不可用，回退到 pnpm install --prod"
         pnpm install --prod
     else
-        npm install
+        echo "错误: 未找到 npm 或 pnpm"
+        exit 1
     fi
 }) || { echo "插件依赖安装失败"; exit 1; }
 
