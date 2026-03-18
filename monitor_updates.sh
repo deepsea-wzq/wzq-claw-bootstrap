@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # OpenClaw 监控与自动更新脚本 (业务独立目录版)
-# 职责：检查插件和技能仓库更新 -> 触发重启
+# 职责：检查插件、技能仓库及运维代码更新 -> 自动同步并重启
 
 # --- 业务目录配置 ---
 OPS_DIR="${WZQ_OPS_DIR:-$HOME/.wzq-claw-ops}"
@@ -9,6 +9,7 @@ BOOTSTRAP_DIR="$OPS_DIR/bootstrap"
 LOG_DIR="$OPS_DIR/logs"
 SKILLS_CACHE_DIR="$OPS_DIR/cache/deepsea-skills"
 EXT_CACHE_DIR="$OPS_DIR/cache/extensions"
+OPENCLAW_HOME="$HOME/.openclaw"
 CURRENT_DATE=$(date +%Y%m%d)
 LOG_FILE="$LOG_DIR/monitor_$CURRENT_DATE.log"
 
@@ -34,55 +35,66 @@ check_git_update() {
     fi
 }
 
-# --- 0. 脚本自更新机制 ---
-# ... (保持原样) ...
-
-OPENCLAW_HOME="$HOME/.openclaw"
-EXT_DIR="$EXT_CACHE_DIR/wzq-channel"
 NEED_RESTART=0
 
-# 1. 检查 wzq-channel 插件更新
+# --- 0. 脚本自更新机制 (运维代码变更) ---
+if check_git_update "$BOOTSTRAP_DIR"; then
+    echo "检测到运维脚本更新, 正在执行自更新及重新初始化..."
+    git -C "$BOOTSTRAP_DIR" pull --quiet
+    # 自更新后执行初始化脚本以应用可能的 SKILL_REPOS 变更
+    bash "$BOOTSTRAP_DIR/init_openclaw.sh"
+    echo "自更新完成。"
+    exit 0 # init_openclaw 会处理重启逻辑，此处直接退出
+fi
+
+# --- 1. 检查 wzq-channel 插件更新 ---
+EXT_DIR="$EXT_CACHE_DIR/wzq-channel"
 if [ -d "$EXT_DIR/.git" ]; then
     if check_git_update "$EXT_DIR"; then
-        echo "检测到插件 wzq-channel 更新,正在拉取并重新安装..."
+        echo "检测到插件 wzq-channel 更新, 正在拉取并重新安装..."
         git -C "$EXT_DIR" pull --quiet
-        # 使用官方命令从缓存目录重新安装插件以应用更新
+        
+        # 增量处理可能存在的死锁（仅清理 wzq-channel）
+        CURRENT_ALLOW=$(openclaw config get "plugins.allow" 2>/dev/null || echo "[]")
+        if [[ $CURRENT_ALLOW == *"wzq-channel"* ]]; then
+             CLEAN_ALLOW=$(echo "$CURRENT_ALLOW" | sed 's/"wzq-channel"//g; s/,,/,/g; s/\[,/[/g; s/,]/]/g')
+             openclaw config set "plugins.allow" "$CLEAN_ALLOW" --strict-json || true
+        fi
+        
+        rm -rf "$OPENCLAW_HOME/extensions/wzq-channel"
         openclaw plugins install "$EXT_DIR"
-        NEED_RESTART=1
-    fi
-else
-    echo "插件缓存目录不存在,跳过更新检查: $EXT_DIR"
-fi
-
-# 2. 检查技能仓库缓存更新
-if [ -d "$SKILLS_CACHE_DIR" ]; then
-    for repo_dir in "$SKILLS_CACHE_DIR"/*; do
-        if [ -d "$repo_dir/.git" ]; then
-            if check_git_update "$repo_dir"; then
-                echo "检测到技能仓库 $(basename "$repo_dir") 更新，正在拉取并重新部署..."
-                git -C "$repo_dir" pull
-                
-                # 分发该仓库下的所有技能
-                find "$repo_dir" -name "SKILL.md" | while read -r skill_md; do
-                    skill_src_dir=$(dirname "$skill_md")
-                    skill_id=$(basename "$skill_src_dir")
-                    [ "$skill_src_dir" == "$repo_dir" ] && continue
-                    
-                    echo "同步技能: $skill_id"
-                    rm -rf "$OPENCLAW_HOME/skills/$skill_id"
-                    cp -r "$skill_src_dir" "$OPENCLAW_HOME/skills/$skill_id"
-                done
-
-                NEED_RESTART=1
+        
+        # 补齐配置：增量启用插件并加入信任名单
+        openclaw config set "plugins.enabled" true
+        openclaw config set "plugins.entries.wzq-channel.enabled" true
+        
+        CURRENT_ALLOW=$(openclaw config get "plugins.allow" 2>/dev/null || echo "[]")
+        if [[ $CURRENT_ALLOW != *"wzq-channel"* ]]; then
+            if [ "$CURRENT_ALLOW" == "[]" ] || [ -z "$CURRENT_ALLOW" ]; then
+                openclaw config set "plugins.allow" "[\"wzq-channel\"]" --strict-json
+            else
+                NEW_ALLOW="${CURRENT_ALLOW%]*},\"wzq-channel\"]"
+                openclaw config set "plugins.allow" "$NEW_ALLOW" --strict-json
             fi
         fi
-    done
+        
+        NEED_RESTART=1
+    fi
 fi
 
-# 3. 如果有更新，执行重启
+# --- 2. 检查技能仓库更新与同步 (调用管理脚本) ---
+set +e # 临时关闭，以便手动检查 exit code
+bash "$BOOTSTRAP_DIR/manage_skills.sh"
+SKILL_SYNC_RC=$?
+set -e
+
+if [ $SKILL_SYNC_RC -eq 2 ]; then
+    NEED_RESTART=1
+fi
+
+# --- 4. 如果有更新，执行重启 ---
 if [ $NEED_RESTART -eq 1 ]; then
     echo "执行服务重启以应用更新..."
-    openclaw gateway install || true
     openclaw gateway restart
     echo "更新处理完成。"
 else

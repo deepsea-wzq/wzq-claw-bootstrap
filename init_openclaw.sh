@@ -27,58 +27,8 @@ USER_WS_URL=${USER_WS_URL:-"wss://wzq.tenpay.com/ws/openclaw"}
 USER_WS_TOKEN=${WZQ_APIKEY:-${USER_WS_TOKEN:-"user-token-xyz"}}
 
 echo ">>> [2/6] 拉取并部署深海技能..."
-OPENCLAW_HOME="$HOME/.openclaw"
-SKILLS_DIR="$OPENCLAW_HOME/skills"
-mkdir -p "$SKILLS_DIR"
-
-SKILL_REPOS=(
-    "https://github.com/deepsea-wzq/wzq-skills"
-    "https://github.com/anthropics/skills"
-    "https://github.com/peterskoett/self-improving-agent.git"
-    "clawhub:find-skills"
-)
-
-for repo in "${SKILL_REPOS[@]}"; do
-    if [[ $repo == clawhub:* ]]; then
-        slug=${repo#clawhub:}
-        echo "使用 clawhub CLI 安装技能: $slug"
-        # 增加重试逻辑以应对 Rate limit
-        max_retries=2
-        retry_count=0
-        until [ $retry_count -ge $max_retries ]
-        do
-            timeout 60s npx clawhub --workdir "$OPENCLAW_HOME" --dir "skills" --no-input install "$slug" && break
-            retry_count=$((retry_count+1))
-            echo "安装 $slug 失败（重试 $retry_count/$max_retries），稍后重试..."
-            sleep 2
-        done
-        if [ $retry_count -eq $max_retries ]; then
-            echo "安装 $slug 最终失败，跳过"
-        fi
-        continue
-    fi
-
-    repo_name=$(basename "$repo" .git)
-    local_cache="$SKILLS_CACHE/$repo_name"
-    
-    echo "处理技能仓库: $repo"
-    if [ ! -d "$local_cache" ]; then
-        timeout 60s git clone --depth 1 "$repo" "$local_cache" || { echo "克隆 $repo 超时，跳过"; continue; }
-    else
-        timeout 60s git -C "$local_cache" pull || { echo "更新 $repo 超时，跳过"; continue; }
-    fi
-
-    # 遍历包含 SKILL.md 的目录进行部署
-    find "$local_cache" -name "SKILL.md" | while read -r skill_md; do
-        skill_src_dir=$(dirname "$skill_md")
-        skill_id=$(basename "$skill_src_dir")
-        [ "$skill_src_dir" == "$local_cache" ] && continue
-        
-        echo "部署技能: $skill_id"
-        rm -rf "$SKILLS_DIR/$skill_id"
-        cp -r "$skill_src_dir" "$SKILLS_DIR/$skill_id"
-    done
-done
+# 环境变量已通过 export 传递给子脚本
+bash "$(dirname "$0")/manage_skills.sh" || echo "警告: 技能同步脚本执行异常，跳过"
 
 echo ">>> [3/6] 安装 wzq-channel 插件..."
 EXT_DIR="$EXT_CACHE/wzq-channel"
@@ -88,22 +38,34 @@ else
     timeout 60s git -C "$EXT_DIR" pull
 fi
 
-# 关键修复：先移除冲突配置和旧插件目录，确保 openclaw 能够顺利启动并重新安装
-openclaw config unset "plugins.allow" || true
-rm -rf "$HOME/.openclaw/extensions/wzq-channel"
+# 关键修复：增量处理信任名单。如果当前插件缺失导致死锁，尝试只在 allow 中移除自己（如果存在）
+CURRENT_ALLOW=$(openclaw config get "plugins.allow" 2>/dev/null || echo "[]")
+if [[ $CURRENT_ALLOW == *"wzq-channel"* ]] && [ ! -d "$HOME/.openclaw/extensions/wzq-channel" ]; then
+    echo "检测到 wzq-channel 在信任名单但目录缺失，正在执行增量清理以解除死锁..."
+    # 简单的正则替换，移除数组中的 "wzq-channel"
+    CLEAN_ALLOW=$(echo "$CURRENT_ALLOW" | sed 's/"wzq-channel"//g; s/,,/,/g; s/\[,/[/g; s/,]/]/g')
+    openclaw config set "plugins.allow" "$CLEAN_ALLOW" --strict-json || true
+fi
 
 # 使用官方命令从本地缓存目录安装插件
 openclaw plugins install "$EXT_DIR"
 
-echo ">>> [4/6] 写入 openclaw.json 配置 (使用 openclaw config set)..."
-# 优先配置并启用插件系统（包含信任名单），防止后续配置命令触发警告
-openclaw config set "plugins" "{
-  \"enabled\": true,
-  \"allow\": [\"wzq-channel\"],
-  \"entries\": {
-    \"wzq-channel\": { \"enabled\": true }
-  }
-}" --strict-json
+echo ">>> [4/6] 写入 openclaw.json 配置 (增量设置)..."
+# 1. 启用插件系统并设置 wzq-channel 状态
+openclaw config set "plugins.enabled" true
+openclaw config set "plugins.entries.wzq-channel.enabled" true
+
+# 2. 增量添加至信任名单 (allow 列表)
+CURRENT_ALLOW=$(openclaw config get "plugins.allow" 2>/dev/null || echo "[]")
+if [[ $CURRENT_ALLOW != *"wzq-channel"* ]]; then
+    if [ "$CURRENT_ALLOW" == "[]" ] || [ -z "$CURRENT_ALLOW" ]; then
+        openclaw config set "plugins.allow" "[\"wzq-channel\"]" --strict-json
+    else
+        # 在数组末尾追加
+        NEW_ALLOW="${CURRENT_ALLOW%]*},\"wzq-channel\"]"
+        openclaw config set "plugins.allow" "$NEW_ALLOW" --strict-json
+    fi
+fi
 
 # 模型配置 (使用全量 JSON 写入方式)
 openclaw config set "models.providers.$LLM_PROVIDER_NAME" "{
@@ -128,12 +90,17 @@ openclaw config set "models.providers.$LLM_PROVIDER_NAME" "{
 
 openclaw config set "agents.defaults.model.primary" "$LLM_PROVIDER_NAME/MiniMax-M2.5-highspeed"
 
-# 1. 配置渠道 (合并为一次全量写入)
+
+# 1. 配置渠道 (包含默认 account 映射)
 openclaw config set "channels.wzq-channel" "{
-  \"enabled\": true,
-  \"wsUrl\": \"$USER_WS_URL\",
-  \"token\": \"$USER_WS_TOKEN\",
-  \"allowFrom\": [\"*\"]
+  \"accounts\": {
+    \"default\": {
+      \"enabled\": true,
+      \"token\": \"$USER_WS_TOKEN\",
+      \"fileUrl\":\"https://wzq.tenpay.com/svr/openclaw/agent/get_image\"
+      \"wsUrl\": \"wss://wzq.tenpay.com/ws/openclaw\"
+    }
+  }
 }" --strict-json
 
 # 2. 启用插件系统及具体插件（已在 plugins 全量配置中合并设置）

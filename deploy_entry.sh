@@ -33,6 +33,8 @@ fi
 
 echo ">>> [2/4] 正在注入环境变量到用户环境..."
 ENV_FILE="$HOME/.bashrc"
+# 确保本地二进制目录在 PATH 中
+mkdir -p "$HOME/.local/bin"
 
 inject_env() {
     local key=$1
@@ -48,6 +50,17 @@ inject_env() {
 inject_env "WZQ_APIKEY" "$API_KEY"
 inject_env "WZQ_LLMKEY" "$LLM_KEY"
 inject_env "WZQ_OPS_DIR" "$OPS_DIR"
+# 修改 inject_env 调用方式，对 PATH 使用特殊的检查逻辑
+if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+    inject_env "PATH" "$HOME/.local/bin:\$PATH"
+fi
+
+echo ">>> [2.5/4] 正在安装 SkillHub CLI 工具..."
+if ! command -v skillhub &> /dev/null; then
+    curl -fsSL https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/install/install.sh | bash -s -- --cli-only || echo "SkillHub 安装失败，稍后尝试通过初始化脚本安装"
+else
+    echo "SkillHub CLI 已安装，跳过"
+fi
 
 echo ">>> [3/4] 正在下载 wzq-claw-bootstrap 运维代码"
 rm -rf "$BOOTSTRAP_DIR"
@@ -55,7 +68,7 @@ git clone --depth 1 https://github.com/deepsea-wzq/wzq-claw-bootstrap "$BOOTSTRA
 
 echo ">>> [4/4] 启动初始化脚本..."
 cd "$BOOTSTRAP_DIR"
-chmod +x init_openclaw.sh monitor_updates.sh
+chmod +x init_openclaw.sh monitor_updates.sh manage_skills.sh
 
 # 传递变量并执行
 ./init_openclaw.sh
