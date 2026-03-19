@@ -19,19 +19,25 @@ else
 fi
 
 echo ">>> [2/6] 正在移除定时监控任务 (Crontab)..."
-(crontab -l 2>/dev/null | grep -v "$MONITOR_SCRIPT" || true) | crontab - || echo "Crontab 已清理或为空。"
+if crontab -l 2>/dev/null | grep -q "$MONITOR_SCRIPT"; then
+    (crontab -l 2>/dev/null | grep -v "$MONITOR_SCRIPT" || true) | crontab -
+    echo "Crontab 任务已移除。"
+else
+    echo "Crontab 中未发现相关任务，跳过。"
+fi
 
 echo ">>> [3/6] 正在还原 wzq-claw-md 替换前的备份文件..."
 MD_BACKUP="$OPS_DIR/backup/openclaw-pre-md"
 MD_DONE_FLAG="$OPS_DIR/.wzq-claw-md-done"
+OPENCLAW_WORKSPACE="$OPENCLAW_HOME/workspace"
 if [ -d "$MD_BACKUP" ]; then
     BACKUP_COUNT=$(find "$MD_BACKUP" -type f 2>/dev/null | wc -l)
     if [ "$BACKUP_COUNT" -gt 0 ]; then
-        echo "发现 $BACKUP_COUNT 个备份文件，正在还原到 $OPENCLAW_HOME ..."
+        echo "发现 $BACKUP_COUNT 个备份文件，正在还原到 $OPENCLAW_WORKSPACE ..."
         # 按原目录结构将备份文件覆盖回去
         find "$MD_BACKUP" -type f | while read -r bak; do
             rel="${bak#$MD_BACKUP/}"
-            target="$OPENCLAW_HOME/$rel"
+            target="$OPENCLAW_WORKSPACE/$rel"
             mkdir -p "$(dirname "$target")"
             cp -f "$bak" "$target"
         done
@@ -58,13 +64,19 @@ if [ -d "$OPENCLAW_HOME" ]; then
     echo "清理 $OPENCLAW_HOME 中的技能与扩展..."
     rm -rf "$OPENCLAW_HOME/skills"
     rm -rf "$OPENCLAW_HOME/extensions/wzq-channel"
+
+    # 预修复被误杀的非法 JSON 结构 (例如 : { 这种缺失 key 的情况)
+    if [ -f "$OPENCLAW_HOME/openclaw.json" ]; then
+        sed -i 's/^[[:space:]]*: {/"wzq-channel": {/g' "$OPENCLAW_HOME/openclaw.json"
+    fi
+
     # 保留主配置文件 openclaw.json 的备份（可选），或者直接清理相关配置项
     # 这里选择清理相关配置项以恢复环境纯净
     if command -v openclaw >/dev/null 2>&1; then
         echo "卸载 wzq-channel 插件..."
         openclaw plugins uninstall wzq-channel || true
     fi
-
+    
     if [ -f "$OPENCLAW_HOME/openclaw.json" ] && command -v jq >/dev/null 2>&1; then
         echo "使用 jq 重置 openclaw 配置项..."
         # 批量移除相关配置，包括 minimax、wzq-channel 通道及插件相关节点
