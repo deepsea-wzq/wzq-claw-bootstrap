@@ -27,6 +27,19 @@ exec >> "$LOG_FILE" 2>&1
 
 echo "--- $(date '+%Y-%m-%d %H:%M:%S') 开始检查更新 ---"
 
+# --- 环境诊断 ---
+if [ -n "$WZQ_SKILLS_TOKEN" ]; then
+    echo "[环境检查] WZQ_SKILLS_TOKEN: 已设置 (长度=${#WZQ_SKILLS_TOKEN})"
+else
+    echo "[环境检查] WZQ_SKILLS_TOKEN: 未设置或为空 ⚠️"
+fi
+
+if command -v openclaw &>/dev/null; then
+    echo "[环境检查] openclaw: 可执行 ($(command -v openclaw))"
+else
+    echo "[环境检查] openclaw: 未找到 ⚠️  PATH=$PATH"
+fi
+
 # --- 通用工具函数 ---
 check_git_update() {
     local dir=$1
