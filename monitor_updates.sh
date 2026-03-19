@@ -5,9 +5,9 @@
 
 # --- 环境初始化 ---
 # 显式加载用户环境变量，确保 Crontab 等非交互式环境下 WZQ_SKILLS_TOKEN 可用
-if [ -f "$HOME/.bashrc" ]; then
+if [ -f "/root/.bashrc" ]; then
     # shellcheck source=/dev/null
-    source "$HOME/.bashrc"
+    source "/root/.bashrc"
 fi
 
 # --- 业务目录配置 ---
