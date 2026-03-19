@@ -118,9 +118,9 @@ for repo in "${SKILL_REPOS[@]}"; do
     current_repo_url="$repo"
     if [[ "$repo_name" == "wzq-skills" ]]; then
         if [ -n "$WZQ_SKILLS_TOKEN" ]; then
-            # 注入私有令牌，支持 x492876854 账号。如果 token 已包含在 repo URL 中，则跳过注入。
+            # 注入私有令牌。如果 token 已包含在 repo URL 中，则跳过注入。
             if [[ "$repo" != *"@"* ]]; then
-                current_repo_url="${repo/https:\/\/github.com\//https:\/\/x492876854:${WZQ_SKILLS_TOKEN}@github.com\/}"
+                current_repo_url="${repo/https:\/\/github.com\//https:\/\/${WZQ_SKILLS_TOKEN}@github.com\/}"
                 echo "[ManageSkills] 环境变量检测到令牌，尝试私有访问 $repo_name"
             fi
         else
