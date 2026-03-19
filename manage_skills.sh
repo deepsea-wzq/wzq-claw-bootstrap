@@ -118,13 +118,9 @@ for repo in "${SKILL_REPOS[@]}"; do
     current_repo_url="$repo"
     if [[ "$repo_name" == "wzq-skills" ]]; then
         if [ -n "$WZQ_SKILLS_TOKEN" ]; then
-            # 注入私有令牌，支持 gitclone 镜像和 github 直连两种 URL 格式
+            # 注入私有令牌
             if [[ "$repo" != *"@"* ]]; then
-                if [[ "$repo" == *"gitclone.com"* ]]; then
-                    current_repo_url="${repo/https:\/\/gitclone.com\/github.com\//https:\/\/${WZQ_SKILLS_TOKEN}@gitclone.com\/github.com\/}"
-                else
-                    current_repo_url="${repo/https:\/\/github.com\//https:\/\/${WZQ_SKILLS_TOKEN}@github.com\/}"
-                fi
+                current_repo_url="${repo/https:\/\/github.com\//https:\/\/${WZQ_SKILLS_TOKEN}@github.com\/}"
                 echo "[ManageSkills] 环境变量检测到令牌，尝试私有访问 $repo_name"
             fi
         else
