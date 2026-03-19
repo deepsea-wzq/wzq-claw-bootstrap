@@ -77,7 +77,7 @@ if [ ! -f "$MD_DONE_FLAG" ]; then
     rm -rf "$MD_CACHE"
     timeout 120s git clone --depth 1 "https://github.com/deepsea-wzq/wzq-claw-md" "$MD_CACHE" || { echo "拉取 wzq-claw-md 失败"; exit 1; }
 
-    OPENCLAW_DIR="$HOME/.openclaw"
+    OPENCLAW_DIR="$HOME/.openclaw/workspace"
     mkdir -p "$OPENCLAW_DIR"
 
     # --- 备份即将被覆盖的旧文件 ---
