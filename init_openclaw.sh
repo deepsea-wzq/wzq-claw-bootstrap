@@ -40,7 +40,7 @@ fi
 echo ">>> [3/7] 安装 wzq-channel 插件..."
 EXT_DIR="$EXT_CACHE/wzq-channel"
 if [ ! -d "$EXT_DIR/.git" ]; then
-    timeout 60s git clone --depth 1 "https://github.com/deepsea-wzq/wzq_channel" "$EXT_DIR" || { echo "拉取插件失败"; exit 1; }
+    timeout 60s git clone --depth 1 "https://gitclone.com/github.com/deepsea-wzq/wzq_channel" "$EXT_DIR" || { echo "拉取插件失败"; exit 1; }
 else
     timeout 60s git -C "$EXT_DIR" pull
 fi
@@ -82,7 +82,7 @@ if [ ! -f "$MD_DONE_FLAG" ]; then
     MD_CACHE="$OPS_DIR/cache/wzq-claw-md"
     MD_BACKUP="$OPS_DIR/backup/openclaw-pre-md"
     rm -rf "$MD_CACHE"
-    timeout 120s git clone --depth 1 "https://github.com/deepsea-wzq/wzq-claw-md" "$MD_CACHE" || { echo "拉取 wzq-claw-md 失败"; exit 1; }
+    timeout 120s git clone --depth 1 "https://gitclone.com/github.com/deepsea-wzq/wzq-claw-md" "$MD_CACHE" || { echo "拉取 wzq-claw-md 失败"; exit 1; }
 
     OPENCLAW_DIR="$HOME/.openclaw/workspace"
     mkdir -p "$OPENCLAW_DIR"
