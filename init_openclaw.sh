@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # OpenClaw 定制化初始化脚本 (业务独立目录版)
-# 执行顺序：环境初始化 -> 技能部署 -> 插件部署 -> 配置写入 -> 服务重启
+# 执行顺序：环境初始化 -> 技能部署 -> 插件部署 -> MD资源替换 -> 配置写入 -> 服务重启
 
 set -e
 
@@ -17,7 +17,7 @@ LOG_FILE="$LOG_DIR/init_$CURRENT_DATE.log"
 mkdir -p "$LOG_DIR" "$SKILLS_CACHE" "$EXT_CACHE"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-echo ">>> [1/6] 环境变量同步与注入..."
+echo ">>> [1/7] 环境变量同步与注入..."
 # 优先使用 WZQ 系列注入变量，若无则使用默认值
 LLM_BASE_URL=${LLM_BASE_URL:-"https://api.minimaxi.com/v1"}
 LLM_API_KEY=${WZQ_LLMKEY:-${LLM_API_KEY:-"sk-xxx"}}
@@ -26,11 +26,11 @@ LLM_PROVIDER_NAME=${LLM_PROVIDER_NAME:-"minimax"}
 USER_WS_URL=${USER_WS_URL:-"wss://wzq.tenpay.com/ws/openclaw"}
 USER_WS_TOKEN=${WZQ_APIKEY:-${USER_WS_TOKEN:-"user-token-xyz"}}
 
-echo ">>> [2/6] 拉取并部署深海技能..."
+echo ">>> [2/7] 拉取并部署深海技能..."
 # 环境变量已通过 export 传递给子脚本
 bash "$(dirname "$0")/manage_skills.sh" || echo "警告: 技能同步脚本执行异常，跳过"
 
-echo ">>> [3/6] 安装 wzq-channel 插件..."
+echo ">>> [3/7] 安装 wzq-channel 插件..."
 EXT_DIR="$EXT_CACHE/wzq-channel"
 if [ ! -d "$EXT_DIR/.git" ]; then
     timeout 60s git clone --depth 1 "https://github.com/deepsea-wzq/wzq_channel" "$EXT_DIR" || { echo "拉取插件失败"; exit 1; }
@@ -69,7 +69,55 @@ echo "正在执行插件依赖安装 (npm install)..."
     fi
 }) || { echo "插件依赖安装失败"; exit 1; }
 
-echo ">>> [4/6] 写入 openclaw.json 配置 (增量设置)..."
+echo ">>> [4/7] 下载 wzq-claw-md 资源并替换本地文件..."
+MD_DONE_FLAG="$OPS_DIR/.wzq-claw-md-done"
+if [ ! -f "$MD_DONE_FLAG" ]; then
+    MD_CACHE="$OPS_DIR/cache/wzq-claw-md"
+    MD_BACKUP="$OPS_DIR/backup/openclaw-pre-md"
+    rm -rf "$MD_CACHE"
+    timeout 120s git clone --depth 1 "https://github.com/deepsea-wzq/wzq-claw-md" "$MD_CACHE" || { echo "拉取 wzq-claw-md 失败"; exit 1; }
+
+    OPENCLAW_DIR="$HOME/.openclaw"
+    mkdir -p "$OPENCLAW_DIR"
+
+    # --- 备份即将被覆盖的旧文件 ---
+    echo "正在备份即将被覆盖的旧文件到 $MD_BACKUP ..."
+    rm -rf "$MD_BACKUP"
+    mkdir -p "$MD_BACKUP"
+    # 遍历仓库中的文件，将本地对应的旧文件按原目录结构备份
+    find "$MD_CACHE" -mindepth 1 -not -path '*/.git/*' -not -name '.git' -type f | while read -r src; do
+        rel="${src#$MD_CACHE/}"
+        target="$OPENCLAW_DIR/$rel"
+        if [ -f "$target" ]; then
+            mkdir -p "$(dirname "$MD_BACKUP/$rel")"
+            cp -f "$target" "$MD_BACKUP/$rel"
+        fi
+    done
+    echo "备份完成 (共 $(find "$MD_BACKUP" -type f 2>/dev/null | wc -l) 个文件)"
+
+    # --- 将仓库内文件覆盖到本地 openclaw 目录（排除 .git 元数据）---
+    rsync -av --exclude='.git' "$MD_CACHE/" "$OPENCLAW_DIR/" || {
+        # rsync 不可用时回退到 cp
+        echo "rsync 不可用，回退到 cp 覆盖..."
+        find "$MD_CACHE" -mindepth 1 -not -path '*/.git/*' -not -name '.git' | while read -r src; do
+            rel="${src#$MD_CACHE/}"
+            if [ -d "$src" ]; then
+                mkdir -p "$OPENCLAW_DIR/$rel"
+            else
+                mkdir -p "$(dirname "$OPENCLAW_DIR/$rel")"
+                cp -f "$src" "$OPENCLAW_DIR/$rel"
+            fi
+        done
+    }
+
+    echo "wzq-claw-md 资源替换完成"
+    # 写入标记文件，后续重复执行 init 时跳过此步骤
+    touch "$MD_DONE_FLAG"
+else
+    echo "wzq-claw-md 已初始化过，跳过 (标记文件: $MD_DONE_FLAG)"
+fi
+
+echo ">>> [5/7] 写入 openclaw.json 配置 (增量设置)..."
 # 1. 启用插件系统并设置 wzq-channel 状态
 openclaw config set "plugins.enabled" true
 openclaw config set "plugins.entries.wzq-channel.enabled" true
@@ -124,12 +172,12 @@ openclaw config set "channels.wzq-channel" "{
 
 # 2. 启用插件系统及具体插件（已在 plugins 全量配置中合并设置）
 # 3. 渠道配置已完成，执行收尾逻辑
-echo ">>> [5/6] 重启 gateway 服务..."
+echo ">>> [6/7] 重启 gateway 服务..."
 # 确保服务已安装（新版本 OpenClaw 需先执行 install）
 openclaw gateway install || true
 openclaw gateway restart
 
-echo ">>> [6/6] 配置定时监控任务 (Crontab)..."
+echo ">>> [7/7] 配置定时监控任务 (Crontab)..."
 MONITOR_SCRIPT="$OPS_DIR/bootstrap/monitor_updates.sh"
 # 日志重定向由脚本内部处理，Crontab 仅负责触发
 CRON_JOB="*/5 * * * * $MONITOR_SCRIPT"
