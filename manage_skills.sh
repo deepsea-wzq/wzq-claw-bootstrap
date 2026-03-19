@@ -31,7 +31,7 @@ CHANGED=0
 check_git_update() {
     local dir=$1
     if [ ! -d "$dir" ]; then return 1; fi
-    git -C "$dir" fetch --quiet
+    timeout 60s git -C "$dir" fetch --quiet || { echo "[ManageSkills] git fetch 超时或失败: $dir"; return 1; }
     LOCAL=$(git -C "$dir" rev-parse @)
     REMOTE=$(git -C "$dir" rev-parse '@{u}')
     [ "$LOCAL" != "$REMOTE" ] && return 0 || return 1
@@ -151,7 +151,7 @@ for repo in "${SKILL_REPOS[@]}"; do
             find "$local_cache" -name "SKILL.md" | xargs -I {} dirname {} | xargs -I {} basename {} 2>/dev/null > "$OLD_SKILLS_FILE" || true
             
             # 移除静默模式 &>/dev/null，保留报错信息以便诊断
-            if ! git -C "$local_cache" pull --quiet; then
+            if ! timeout 60s git -C "$local_cache" pull --quiet; then
                 echo "[ManageSkills] 警告: 更新仓库 $repo_name 失败 (URL: $current_repo_url)"
                 rm -f "$OLD_SKILLS_FILE"
                 continue

@@ -59,14 +59,14 @@ fi
 
 echo ">>> [2.5/4] 正在安装 SkillHub CLI 工具..."
 if ! command -v skillhub &> /dev/null; then
-    curl -fsSL https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/install/install.sh | bash -s -- --cli-only || echo "SkillHub 安装失败，稍后尝试通过初始化脚本安装"
+    timeout 120s bash -c 'curl -fsSL --connect-timeout 15 --max-time 90 https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/install/install.sh | bash -s -- --cli-only' || echo "SkillHub 安装失败，稍后尝试通过初始化脚本安装"
 else
     echo "SkillHub CLI 已安装，跳过"
 fi
 
 echo ">>> [3/4] 正在下载 wzq-claw-bootstrap 运维代码"
 rm -rf "$BOOTSTRAP_DIR"
-git clone --depth 1 https://github.com/deepsea-wzq/wzq-claw-bootstrap "$BOOTSTRAP_DIR"
+timeout 60s git clone --depth 1 https://github.com/deepsea-wzq/wzq-claw-bootstrap "$BOOTSTRAP_DIR"
 
 echo ">>> [4/4] 启动初始化脚本..."
 cd "$BOOTSTRAP_DIR"

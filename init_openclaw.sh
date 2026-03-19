@@ -48,7 +48,7 @@ fi
 # 关键修复：增量处理信任名单。如果当前插件缺失导致死锁（CLI 无法启动），直接修正配置文件
 CLAW_CONFIG="$HOME/.openclaw/openclaw.json"
 if [ -f "$CLAW_CONFIG" ]; then
-    if ! openclaw config get "plugins.allow" &>/dev/null; then
+    if ! timeout 15s openclaw config get "plugins.allow" &>/dev/null; then
         echo "检测到 wzq-channel 可能导致配置死锁，正在执行强力清理以解除限制..."
         # 移除可能导致校验失败的插件项
         sed -i 's/"wzq-channel"//g; s/,,/,/g; s/\[,/[/g; s/,]/]/g' "$CLAW_CONFIG"
@@ -66,10 +66,10 @@ cp -r "$EXT_DIR" "$PLUGIN_TARGET_DIR"
 echo "正在执行插件依赖安装 (npm install)..."
 (cd "$PLUGIN_TARGET_DIR" && {
     if command -v npm &> /dev/null; then
-        npm install
+        timeout 180s npm install
     elif command -v pnpm &> /dev/null; then
         echo "警告: npm 不可用，回退到 pnpm install --prod"
-        pnpm install --prod
+        timeout 180s pnpm install --prod
     else
         echo "错误: 未找到 npm 或 pnpm"
         exit 1
@@ -126,23 +126,23 @@ fi
 
 echo ">>> [5/7] 写入 openclaw.json 配置 (增量设置)..."
 # 1. 启用插件系统并设置 wzq-channel 状态
-openclaw config set "plugins.enabled" true
-openclaw config set "plugins.entries.wzq-channel.enabled" true
+timeout 15s openclaw config set "plugins.enabled" true
+timeout 15s openclaw config set "plugins.entries.wzq-channel.enabled" true
 
 # 2. 增量添加至信任名单 (allow 列表)
-CURRENT_ALLOW=$(openclaw config get "plugins.allow" 2>/dev/null || echo "[]")
+CURRENT_ALLOW=$(timeout 15s openclaw config get "plugins.allow" 2>/dev/null || echo "[]")
 if [[ $CURRENT_ALLOW != *"wzq-channel"* ]]; then
     if [ "$CURRENT_ALLOW" == "[]" ] || [ -z "$CURRENT_ALLOW" ]; then
-        openclaw config set "plugins.allow" "[\"wzq-channel\"]" --strict-json
+        timeout 15s openclaw config set "plugins.allow" "[\"wzq-channel\"]" --strict-json
     else
         # 在数组末尾追加
         NEW_ALLOW="${CURRENT_ALLOW%]*},\"wzq-channel\"]"
-        openclaw config set "plugins.allow" "$NEW_ALLOW" --strict-json
+        timeout 15s openclaw config set "plugins.allow" "$NEW_ALLOW" --strict-json
     fi
 fi
 
 # 模型配置 (使用全量 JSON 写入方式)
-openclaw config set "models.providers.$LLM_PROVIDER_NAME" "{
+timeout 15s openclaw config set "models.providers.$LLM_PROVIDER_NAME" "{
   \"baseUrl\": \"$LLM_BASE_URL\",
   \"apiKey\": \"$LLM_API_KEY\",
   \"api\": \"openai-completions\",
@@ -157,11 +157,11 @@ openclaw config set "models.providers.$LLM_PROVIDER_NAME" "{
   ]
 }" --strict-json
 
-openclaw config set "agents.defaults.model.primary" "$LLM_PROVIDER_NAME/claude-sonnet-4-6"
+timeout 15s openclaw config set "agents.defaults.model.primary" "$LLM_PROVIDER_NAME/claude-sonnet-4-6"
 
 
 # 1. 配置渠道 (包含默认 account 映射)
-openclaw config set "channels.wzq-channel" "{
+timeout 15s openclaw config set "channels.wzq-channel" "{
   \"accounts\": {
     \"default\": {
       \"enabled\": true,
@@ -176,8 +176,8 @@ openclaw config set "channels.wzq-channel" "{
 # 3. 渠道配置已完成，执行收尾逻辑
 echo ">>> [6/7] 重启 gateway 服务..."
 # 确保服务已安装（新版本 OpenClaw 需先执行 install）
-openclaw gateway install || true
-openclaw gateway restart
+timeout 60s openclaw gateway install || true
+timeout 60s openclaw gateway restart
 
 echo ">>> [7/7] 配置定时监控任务 (Crontab)..."
 MONITOR_SCRIPT="$OPS_DIR/bootstrap/monitor_updates.sh"
