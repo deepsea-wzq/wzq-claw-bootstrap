@@ -4,13 +4,25 @@
 # 职责：检查插件、技能仓库及运维代码更新 -> 自动同步并重启
 
 # --- 环境初始化 ---
-# 显式加载用户环境变量，确保 Crontab 等非交互式环境下 WZQ_SKILLS_TOKEN 可用
-if [ -f "/root/.bashrc" ]; then
+# 从运维目录的独立 env.sh 加载业务变量，不依赖 .bashrc（避免非交互式守卫问题）
+OPS_DIR="${WZQ_OPS_DIR:-$HOME/.wzq-claw-ops}"
+ENV_SH="$OPS_DIR/env.sh"
+
+if [ -f "$ENV_SH" ]; then
     # shellcheck source=/dev/null
-    source "/root/.bashrc"
+    source "$ENV_SH"
+else
+    echo "[警告] 环境变量文件 $ENV_SH 不存在，尝试回退到 .bashrc"
+    # 回退：尝试从 .bashrc 中提取 export 行（绕过非交互式守卫）
+    if [ -f "$HOME/.bashrc" ]; then
+        eval "$(grep '^export WZQ_' "$HOME/.bashrc" 2>/dev/null)"
+        eval "$(grep '^export NVM_DIR' "$HOME/.bashrc" 2>/dev/null)"
+        [ -s "${NVM_DIR:-$HOME/.nvm}/nvm.sh" ] && . "${NVM_DIR:-$HOME/.nvm}/nvm.sh"
+    fi
 fi
 
 # --- 业务目录配置 ---
+# source env.sh 后 WZQ_OPS_DIR 已就位，重新解析确保一致
 OPS_DIR="${WZQ_OPS_DIR:-$HOME/.wzq-claw-ops}"
 # 优先使用脚本当前所在目录，以便在 bootstrap/ 目录下也能正常运行
 BOOTSTRAP_DIR="$(cd "$(dirname "$0")" && pwd)"

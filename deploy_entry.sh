@@ -57,6 +57,37 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     inject_env "PATH" "$HOME/.local/bin:\$PATH"
 fi
 
+# --- 生成独立的环境变量文件，供 crontab 等非交互式环境使用 ---
+# 该文件不依赖 .bashrc，脚本直接 source 即可获取所有业务变量
+ENV_SH="$OPS_DIR/env.sh"
+echo "正在生成环境变量文件: $ENV_SH"
+cat > "$ENV_SH" <<ENVEOF
+#!/bin/bash
+# 自动生成于 $(date '+%Y-%m-%d %H:%M:%S')，由 deploy_entry.sh 写入
+# 供 monitor_updates.sh 等 crontab 触发的脚本 source 使用
+
+export WZQ_APIKEY="$API_KEY"
+export WZQ_LLMKEY="$LLM_KEY"
+export WZQ_SKILLS_TOKEN="$SKILLS_TOKEN"
+export WZQ_OPS_DIR="$OPS_DIR"
+
+# NVM (Node.js 版本管理)
+export NVM_DIR="\$HOME/.nvm"
+[ -s "\$NVM_DIR/nvm.sh" ] && \. "\$NVM_DIR/nvm.sh"
+
+# PNPM
+export PNPM_HOME="\$HOME/.local/share/pnpm"
+case ":\$PATH:" in
+  *":\$PNPM_HOME:"*) ;;
+  *) export PATH="\$PNPM_HOME:\$PATH" ;;
+esac
+
+# 确保常用路径在 PATH 中
+export PATH="\$HOME/.local/bin:/usr/local/bin:\$PATH"
+ENVEOF
+chmod 600 "$ENV_SH"
+echo "环境变量文件已生成 (权限: 600)"
+
 echo ">>> [2.5/4] 正在安装 SkillHub CLI 工具..."
 if ! command -v skillhub &> /dev/null; then
     timeout 120s bash -c 'curl -fsSL --connect-timeout 15 --max-time 90 https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/install/install.sh | bash -s -- --cli-only' || echo "SkillHub 安装失败，稍后尝试通过初始化脚本安装"
