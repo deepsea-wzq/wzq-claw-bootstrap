@@ -28,7 +28,14 @@ USER_WS_TOKEN=${WZQ_APIKEY:-${USER_WS_TOKEN:-"user-token-xyz"}}
 
 echo ">>> [2/7] 拉取并部署深海技能..."
 # 环境变量已通过 export 传递给子脚本
-bash "$(dirname "$0")/manage_skills.sh" || echo "警告: 技能同步脚本执行异常，跳过"
+# manage_skills.sh 退出码: 0=无变更, 2=有变更(均为成功), 1=出错
+set +e
+bash "$(dirname "$0")/manage_skills.sh"
+SKILL_SYNC_RC=$?
+set -e
+if [ $SKILL_SYNC_RC -eq 1 ]; then
+    echo "警告: 技能同步脚本执行异常，跳过"
+fi
 
 echo ">>> [3/7] 安装 wzq-channel 插件..."
 EXT_DIR="$EXT_CACHE/wzq-channel"

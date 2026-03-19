@@ -39,12 +39,10 @@ NEED_RESTART=0
 
 # --- 0. 脚本自更新机制 (运维代码变更) ---
 if check_git_update "$BOOTSTRAP_DIR"; then
-    echo "检测到运维脚本更新, 正在执行自更新及重新初始化..."
+    echo "检测到运维脚本更新, 正在拉取最新代码..."
     git -C "$BOOTSTRAP_DIR" pull --quiet
-    # 自更新后执行初始化脚本以应用可能的 SKILL_REPOS 变更
-    bash "$BOOTSTRAP_DIR/init_openclaw.sh"
-    echo "自更新完成。"
-    exit 0 # init_openclaw 会处理重启逻辑，此处直接退出
+    echo "运维脚本已更新，继续执行后续检查流程。"
+    NEED_RESTART=1
 fi
 
 # --- 1. 检查 wzq-channel 插件更新 ---
