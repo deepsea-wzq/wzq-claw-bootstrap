@@ -3,9 +3,17 @@
 # OpenClaw 监控与自动更新脚本 (业务独立目录版)
 # 职责：检查插件、技能仓库及运维代码更新 -> 自动同步并重启
 
+# --- 环境初始化 ---
+# 显式加载用户环境变量，确保 Crontab 等非交互式环境下 WZQ_SKILLS_TOKEN 可用
+if [ -f "$HOME/.bashrc" ]; then
+    # shellcheck source=/dev/null
+    source "$HOME/.bashrc"
+fi
+
 # --- 业务目录配置 ---
 OPS_DIR="${WZQ_OPS_DIR:-$HOME/.wzq-claw-ops}"
-BOOTSTRAP_DIR="$OPS_DIR/bootstrap"
+# 优先使用脚本当前所在目录，以便在 bootstrap/ 目录下也能正常运行
+BOOTSTRAP_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG_DIR="$OPS_DIR/logs"
 SKILLS_CACHE_DIR="$OPS_DIR/cache/deepsea-skills"
 EXT_CACHE_DIR="$OPS_DIR/cache/extensions"

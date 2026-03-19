@@ -114,13 +114,17 @@ for repo in "${SKILL_REPOS[@]}"; do
     repo_name=$(basename "$repo" .git)
     local_cache="$SKILLS_CACHE_DIR/$repo_name"
 
-    # 特殊处理 wzq-skills 的私有令牌
+    # 特殊处理 wzq-skills 的私有令牌（仅此仓库需要私钥拉取）
     current_repo_url="$repo"
     if [[ "$repo_name" == "wzq-skills" ]]; then
         if [ -n "$WZQ_SKILLS_TOKEN" ]; then
-            # 注入私有令牌。如果 token 已包含在 repo URL 中，则跳过注入。
+            # 注入私有令牌，支持 gitclone 镜像和 github 直连两种 URL 格式
             if [[ "$repo" != *"@"* ]]; then
-                current_repo_url="${repo/https:\/\/gitclone.com\/github.com\//https:\/\/${WZQ_SKILLS_TOKEN}@gitclone.com\/github.com\/}"
+                if [[ "$repo" == *"gitclone.com"* ]]; then
+                    current_repo_url="${repo/https:\/\/gitclone.com\/github.com\//https:\/\/${WZQ_SKILLS_TOKEN}@gitclone.com\/github.com\/}"
+                else
+                    current_repo_url="${repo/https:\/\/github.com\//https:\/\/${WZQ_SKILLS_TOKEN}@github.com\/}"
+                fi
                 echo "[ManageSkills] 环境变量检测到令牌，尝试私有访问 $repo_name"
             fi
         else
@@ -130,14 +134,18 @@ for repo in "${SKILL_REPOS[@]}"; do
 
     if [ ! -d "$local_cache" ]; then
         echo "[ManageSkills] 克隆新仓库: $repo_name"
-        timeout 60s git clone --quiet --depth 1 "$current_repo_url" "$local_cache" &>/dev/null || { echo "[ManageSkills] 克隆 $repo_name 失败"; continue; }
+        # 移除静默模式 &>/dev/null，保留报错信息以便诊断
+        if ! timeout 60s git clone --quiet --depth 1 "$current_repo_url" "$local_cache"; then
+             echo "[ManageSkills] 错误: 克隆仓库 $repo_name 失败 (URL: $current_repo_url)"
+             continue
+        fi
         deploy_repo_skills "$local_cache"
         CHANGED=1
     else
         # 检查并更新
         # 针对 wzq-skills，始终同步远程地址以反映当前环境变量状态（令牌可能增加或移除）
         if [[ "$repo_name" == "wzq-skills" ]]; then
-             git -C "$local_cache" remote set-url origin "$current_repo_url"
+            git -C "$local_cache" remote set-url origin "$current_repo_url"
         fi
 
         if check_git_update "$local_cache"; then
@@ -146,7 +154,12 @@ for repo in "${SKILL_REPOS[@]}"; do
             OLD_SKILLS_FILE=$(mktemp)
             find "$local_cache" -name "SKILL.md" | xargs -I {} dirname {} | xargs -I {} basename {} 2>/dev/null > "$OLD_SKILLS_FILE" || true
             
-            git -C "$local_cache" pull --quiet
+            # 移除静默模式 &>/dev/null，保留报错信息以便诊断
+            if ! git -C "$local_cache" pull --quiet; then
+                echo "[ManageSkills] 警告: 更新仓库 $repo_name 失败 (URL: $current_repo_url)"
+                rm -f "$OLD_SKILLS_FILE"
+                continue
+            fi
             deploy_repo_skills "$local_cache" "$OLD_SKILLS_FILE"
             rm -f "$OLD_SKILLS_FILE"
             CHANGED=1
