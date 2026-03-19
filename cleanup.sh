@@ -70,11 +70,11 @@ if [ -d "$OPENCLAW_HOME" ]; then
         # 批量移除相关配置，包括 minimax、wzq-channel 通道及插件相关节点
         # 并从 plugins.allow 列表中过滤掉 wzq-channel
         TMP_JSON=$(mktemp)
-        jq 'del(.models.providers.minimax, .channels["wzq-channel"], .agents.defaults.model.primary, .plugins.entries["wzq-channel"]) | if .plugins.allow then .plugins.allow |= map(select(. != "wzq-channel")) else . end' "$OPENCLAW_HOME/openclaw.json" > "$TMP_JSON" && mv "$TMP_JSON" "$OPENCLAW_HOME/openclaw.json"
+        jq 'del(.models.providers["finance-gateway"], .channels["wzq-channel"], .agents.defaults.model.primary, .plugins.entries["wzq-channel"]) | if .plugins.allow then .plugins.allow |= map(select(. != "wzq-channel")) else . end' "$OPENCLAW_HOME/openclaw.json" > "$TMP_JSON" && mv "$TMP_JSON" "$OPENCLAW_HOME/openclaw.json"
     elif command -v openclaw >/dev/null 2>&1; then
         echo "重置 openclaw 配置项..."
         # 使用 unset 彻底移除配置节点，而非设为 null
-        openclaw config unset "models.providers.minimax" || true
+        openclaw config unset "models.providers.finance-gateway" || true
         openclaw config unset "channels.wzq-channel" || true
         openclaw config unset "agents.defaults.model.primary" || true
         openclaw config unset "plugins.entries.wzq-channel" || true

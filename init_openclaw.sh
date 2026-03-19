@@ -19,9 +19,9 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 echo ">>> [1/7] 环境变量同步与注入..."
 # 优先使用 WZQ 系列注入变量，若无则使用默认值
-LLM_BASE_URL=${LLM_BASE_URL:-"https://api.minimaxi.com/v1"}
-LLM_API_KEY=${WZQ_LLMKEY:-${LLM_API_KEY:-"sk-xxx"}}
-LLM_PROVIDER_NAME=${LLM_PROVIDER_NAME:-"minimax"}
+LLM_BASE_URL=${LLM_BASE_URL:-"proxy.finance.qq.com/cgi/cgi-bin/openai/sse/openclaw/v1"}
+LLM_API_KEY=${WZQ_LLMKEY:-${LLM_API_KEY:-""}}
+LLM_PROVIDER_NAME=${LLM_PROVIDER_NAME:-"finance-gateway"}
 
 USER_WS_URL=${USER_WS_URL:-"wss://wzq.tenpay.com/ws/openclaw"}
 USER_WS_TOKEN=${WZQ_APIKEY:-${USER_WS_TOKEN:-"user-token-xyz"}}
@@ -136,26 +136,21 @@ fi
 
 # 模型配置 (使用全量 JSON 写入方式)
 openclaw config set "models.providers.$LLM_PROVIDER_NAME" "{
-  \"api\": \"openai-completions\",
   \"baseUrl\": \"$LLM_BASE_URL\",
   \"apiKey\": \"$LLM_API_KEY\",
+  \"api\": \"openai-completions\",
   \"models\": [
     {
-      \"id\": \"MiniMax-M2.5\",
-      \"name\": \"MiniMax M2.5\",
-      \"contextWindow\": 200000,
-      \"maxTokens\": 8192
-    },
-    {
-      \"id\": \"MiniMax-M2.5-highspeed\",
-      \"name\": \"MiniMax M2.5 Highspeed\",
-      \"contextWindow\": 200000,
-      \"maxTokens\": 8192
+      \"id\": \"claude-sonnet-4-6\",
+      \"name\": \"claude-sonnet-4-6\",
+      \"contextWindow\": 500000,
+      \"maxTokens\": 50000,
+      \"input\":[\"text\",\"image\"]
     }
   ]
 }" --strict-json
 
-openclaw config set "agents.defaults.model.primary" "$LLM_PROVIDER_NAME/MiniMax-M2.5-highspeed"
+openclaw config set "agents.defaults.model.primary" "$LLM_PROVIDER_NAME/claude-sonnet-4-6"
 
 
 # 1. 配置渠道 (包含默认 account 映射)
