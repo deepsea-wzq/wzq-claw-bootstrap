@@ -31,9 +31,24 @@ CHANGED=0
 check_git_update() {
     local dir=$1
     if [ ! -d "$dir" ]; then return 1; fi
-    timeout 60s git -C "$dir" fetch --quiet || { echo "[ManageSkills] git fetch 超时或失败: $dir"; return 1; }
-    LOCAL=$(git -C "$dir" rev-parse @)
-    REMOTE=$(git -C "$dir" rev-parse '@{u}')
+
+    # 自动检测远程默认分支名（main / master 等）
+    local remote_branch
+    remote_branch=$(git -C "$dir" remote show origin 2>/dev/null | sed -n 's/.*HEAD branch: //p')
+    if [ -z "$remote_branch" ]; then
+        remote_branch="main"  # 兜底使用 main
+    fi
+
+    # fetch 指定分支，兼容浅克隆（没有 upstream tracking 的情况）
+    timeout 60s git -C "$dir" fetch --quiet origin "$remote_branch" || {
+        echo "[ManageSkills] git fetch 超时或失败: $dir"
+        return 1
+    }
+
+    # 使用 HEAD 和 FETCH_HEAD 比对，避免 @ 歧义和 @{u} 找不到上游的问题
+    local LOCAL REMOTE
+    LOCAL=$(git -C "$dir" rev-parse HEAD)
+    REMOTE=$(git -C "$dir" rev-parse FETCH_HEAD)
     [ "$LOCAL" != "$REMOTE" ] && return 0 || return 1
 }
 
@@ -150,8 +165,8 @@ for repo in "${SKILL_REPOS[@]}"; do
             OLD_SKILLS_FILE=$(mktemp)
             find "$local_cache" -name "SKILL.md" | xargs -I {} dirname {} | xargs -I {} basename {} 2>/dev/null > "$OLD_SKILLS_FILE" || true
             
-            # 移除静默模式 &>/dev/null，保留报错信息以便诊断
-            if ! timeout 60s git -C "$local_cache" pull --quiet; then
+            # 浅克隆仓库无法用 pull（缺少 upstream tracking），改用 fetch + reset
+            if ! timeout 60s git -C "$local_cache" reset --hard FETCH_HEAD --quiet 2>/dev/null; then
                 echo "[ManageSkills] 警告: 更新仓库 $repo_name 失败 (URL: $current_repo_url)"
                 rm -f "$OLD_SKILLS_FILE"
                 continue
