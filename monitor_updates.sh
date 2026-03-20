@@ -34,7 +34,7 @@ fi
 # --- 业务目录配置 ---
 # source env.sh 后 WZQ_OPS_DIR 已就位，重新解析确保一致
 OPS_DIR="${WZQ_OPS_DIR:-$HOME/.wzq-claw-ops}"
-# 优先使用脚本当前所在目录，以便在 bootstrap/ 目录下也能正常运行
+# 优先使用脚本当前所在目录，以便在 bootstrap/ 目录下也能正常运行 
 BOOTSTRAP_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG_DIR="$OPS_DIR/logs"
 SKILLS_CACHE_DIR="$OPS_DIR/cache/deepsea-skills"
