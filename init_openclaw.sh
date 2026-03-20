@@ -150,7 +150,7 @@ timeout 15s openclaw config set "models.providers.$LLM_PROVIDER_NAME" "{
     {
       \"id\": \"claude-sonnet-4-6\",
       \"name\": \"claude-sonnet-4-6\",
-      \"contextWindow\": 500000,
+      \"contextWindow\": 200000,
       \"maxTokens\": 50000,
       \"input\":[\"text\",\"image\"]
     }
