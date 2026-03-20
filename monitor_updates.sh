@@ -21,6 +21,16 @@ else
     fi
 fi
 
+# --- D-Bus 环境补齐 (crontab 下 systemctl 需要) ---
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+if [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
+    if [ -S "$XDG_RUNTIME_DIR/bus" ]; then
+        export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+    elif [ -S "/run/dbus/system_bus_socket" ]; then
+        export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/dbus/system_bus_socket"
+    fi
+fi
+
 # --- 业务目录配置 ---
 # source env.sh 后 WZQ_OPS_DIR 已就位，重新解析确保一致
 OPS_DIR="${WZQ_OPS_DIR:-$HOME/.wzq-claw-ops}"
@@ -145,6 +155,9 @@ fi
 # --- 4. 如果有更新，执行重启 ---
 if [ $NEED_RESTART -eq 1 ]; then
     echo "执行服务重启以应用更新..."
+    echo "[重启诊断] XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"
+    echo "[重启诊断] DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS"
+    
     timeout 60s openclaw gateway restart || echo "警告: gateway 重启超时或失败"
     echo "更新处理完成。"
 else

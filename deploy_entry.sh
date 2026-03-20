@@ -84,6 +84,16 @@ esac
 
 # 确保常用路径在 PATH 中
 export PATH="\$HOME/.local/bin:/usr/local/bin:\$PATH"
+
+# systemd / D-Bus 环境 (crontab 等非登录会话中 systemctl 需要这些变量)
+export XDG_RUNTIME_DIR="\${XDG_RUNTIME_DIR:-/run/user/\$(id -u)}"
+if [ -z "\$DBUS_SESSION_BUS_ADDRESS" ]; then
+    if [ -S "\$XDG_RUNTIME_DIR/bus" ]; then
+        export DBUS_SESSION_BUS_ADDRESS="unix:path=\$XDG_RUNTIME_DIR/bus"
+    elif [ -S "/run/dbus/system_bus_socket" ]; then
+        export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/dbus/system_bus_socket"
+    fi
+fi
 ENVEOF
 chmod 600 "$ENV_SH"
 echo "环境变量文件已生成 (权限: 600)"
