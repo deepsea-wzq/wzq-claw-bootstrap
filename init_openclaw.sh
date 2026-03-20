@@ -159,6 +159,10 @@ timeout 15s openclaw config set "models.providers.$LLM_PROVIDER_NAME" "{
 
 timeout 15s openclaw config set "agents.defaults.model.primary" "$LLM_PROVIDER_NAME/claude-sonnet-4-6"
 
+# 注入关键环境变量到 openclaw 运行时，确保 crontab 等非交互式环境下服务也能获取
+if [ -n "$WZQ_APIKEY" ]; then
+    timeout 15s openclaw config set "env.vars.WZQ_APIKEY" "$WZQ_APIKEY"
+fi
 
 # 1. 配置渠道 (包含默认 account 映射)
 timeout 15s openclaw config set "channels.wzq-channel" "{
