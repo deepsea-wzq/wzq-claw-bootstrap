@@ -19,7 +19,7 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 echo ">>> [1/7] 环境变量同步与注入..."
 # 优先使用 WZQ 系列注入变量，若无则使用默认值
-LLM_BASE_URL=${LLM_BASE_URL:-"proxy.finance.qq.com/cgi/cgi-bin/openai/sse/openclaw/v1"}
+LLM_BASE_URL=${LLM_BASE_URL:-"https://proxy.finance.qq.com/cgi/cgi-bin/openai/sse/openclaw/v1"}
 LLM_API_KEY=${WZQ_LLMKEY:-${LLM_API_KEY:-""}}
 LLM_PROVIDER_NAME=${LLM_PROVIDER_NAME:-"finance-gateway"}
 
