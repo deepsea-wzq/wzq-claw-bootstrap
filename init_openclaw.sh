@@ -208,7 +208,7 @@ fi
 if ! openclaw cron list --json 2>/dev/null | grep -q "market-pulse-postmarket"; then
   openclaw cron create \
     --name "market-pulse-postmarket" \
-    --cron "0 19 * * 1-5" \
+    --cron "10 19 * * 1-5" \
     --tz "Asia/Shanghai" \
     --session main \
     --system-event "盘后复盘｜涨跌·板块·资金·自选股" \
