@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # OpenClaw 定制化初始化脚本 (业务独立目录版)
-# 执行顺序：环境初始化 -> 技能部署 -> 插件部署 -> MD资源替换 -> 配置写入 -> 服务重启
+# 执行顺序：环境初始化 -> 技能部署 -> 插件部署 -> MD资源替换 -> 配置写入 -> 服务重启 -> 技能定时任务预配置
 
 set -e
 
@@ -178,12 +178,50 @@ timeout 15s openclaw config set "channels.wzq-channel" "{
 
 # 2. 启用插件系统及具体插件（已在 plugins 全量配置中合并设置）
 # 3. 渠道配置已完成，执行收尾逻辑
-echo ">>> [6/7] 重启 gateway 服务..."
+echo ">>> [6/8] 重启 gateway 服务..."
 # 确保服务已安装（新版本 OpenClaw 需先执行 install）
 timeout 60s openclaw gateway install || true
 timeout 60s openclaw gateway restart
 
-echo ">>> [7/7] 配置定时监控任务 (Crontab)..."
+echo ">>> [7/8] 预配置 skill 定时任务 (disabled)..."
+# gateway 启动后才能操作 cron，等待 gateway 完全就绪
+sleep 5
+
+# --- Market Pulse 盘前/盘后定时任务 ---
+# 检查是否已存在，避免重复创建；创建为 disabled 状态，用户确认后自行启用
+set +e
+if ! openclaw cron list --json 2>/dev/null | grep -q "market-pulse-premarket"; then
+  openclaw cron create \
+    --name "market-pulse-premarket" \
+    --cron "30 8 * * 1-5" \
+    --tz "Asia/Shanghai" \
+    --session main \
+    --system-event "盘前分析｜要闻·行情·资金·自选股" \
+    --description "每个交易日8:30自动推送盘前全景分析。当前未启用，对我说「开启盘前分析」即可。" \
+    --disabled \
+  && echo "market-pulse-premarket 创建成功 (disabled)" \
+  || echo "警告: market-pulse-premarket 创建失败"
+else
+  echo "market-pulse-premarket 已存在，跳过"
+fi
+
+if ! openclaw cron list --json 2>/dev/null | grep -q "market-pulse-postmarket"; then
+  openclaw cron create \
+    --name "market-pulse-postmarket" \
+    --cron "0 19 * * 1-5" \
+    --tz "Asia/Shanghai" \
+    --session main \
+    --system-event "盘后复盘｜涨跌·板块·资金·自选股" \
+    --description "每个交易日16:30自动推送盘后复盘分析。当前未启用，对我说「开启盘后复盘」即可。" \
+    --disabled \
+  && echo "market-pulse-postmarket 创建成功 (disabled)" \
+  || echo "警告: market-pulse-postmarket 创建失败"
+else
+  echo "market-pulse-postmarket 已存在，跳过"
+fi
+set -e
+
+echo ">>> [8/8] 配置定时监控任务 (Crontab)..."
 MONITOR_SCRIPT="$OPS_DIR/bootstrap/monitor_updates.sh"
 # 日志重定向由脚本内部处理，Crontab 仅负责触发
 CRON_JOB="*/5 * * * * $MONITOR_SCRIPT"
