@@ -196,7 +196,7 @@ if ! openclaw cron list --json 2>/dev/null | grep -q "market-pulse-premarket"; t
     --cron "30 8 * * 1-5" \
     --tz "Asia/Shanghai" \
     --session main \
-    --system-event "盘前市场脉搏：每个交易日8:30推送隔夜要闻、指数行情、板块资金、自选股预警。" \
+    --system-event "每日8:30 盘前分析：要闻/行情/资金/自选股" \
     --description "盘前市场脉搏：每个交易日8:30推送隔夜要闻、指数行情、板块资金、自选股预警。说「启用市场脉搏」即可开启。" \
     --disabled \
   && echo "market-pulse-premarket 创建成功 (disabled)" \
@@ -211,7 +211,7 @@ if ! openclaw cron list --json 2>/dev/null | grep -q "market-pulse-postmarket"; 
     --cron "30 16 * * 1-5" \
     --tz "Asia/Shanghai" \
     --session main \
-    --system-event "盘后市场脉搏：每个交易日16:30推送收盘总结、板块涨跌、资金流向、自选股复盘。" \
+    --system-event "每日16:30 盘后复盘：涨跌/板块/资金/自选股" \
     --description "盘后市场脉搏：每个交易日16:30推送收盘总结、板块涨跌、资金流向、自选股复盘。说「启用市场脉搏」即可开启。" \
     --disabled \
   && echo "market-pulse-postmarket 创建成功 (disabled)" \
