@@ -10,7 +10,7 @@ OPS_DIR="${WZQ_OPS_DIR:-$HOME/.wzq-claw-ops}"
 OPENCLAW_HOME="$HOME/.openclaw"
 MONITOR_SCRIPT="$OPS_DIR/bootstrap/monitor_updates.sh"
 
-echo ">>> [1/6] 正在停止 OpenClaw 服务..."
+echo ">>> [1/7] 正在停止 OpenClaw 服务..."
 if command -v openclaw >/dev/null 2>&1; then
     openclaw gateway stop || true
     echo "服务已停止。"
@@ -18,7 +18,15 @@ else
     echo "未发现 openclaw 命令，跳过停止服务步骤。"
 fi
 
-echo ">>> [2/6] 正在移除定时监控任务 (Crontab)..."
+echo ">>> [2/7] 正在删除 market-pulse 定时任务..."
+if command -v openclaw >/dev/null 2>&1; then
+    openclaw cron delete --name "market-pulse-premarket" 2>/dev/null && echo "market-pulse-premarket 已删除" || echo "market-pulse-premarket 不存在，跳过"
+    openclaw cron delete --name "market-pulse-postmarket" 2>/dev/null && echo "market-pulse-postmarket 已删除" || echo "market-pulse-postmarket 不存在，跳过"
+else
+    echo "未发现 openclaw 命令，跳过 cron 任务清理。"
+fi
+
+echo ">>> [3/7] 正在移除定时监控任务 (Crontab)..."
 if crontab -l 2>/dev/null | grep -q "$MONITOR_SCRIPT"; then
     (crontab -l 2>/dev/null | grep -v "$MONITOR_SCRIPT" || true) | crontab -
     echo "Crontab 任务已移除。"
@@ -26,7 +34,7 @@ else
     echo "Crontab 中未发现相关任务，跳过。"
 fi
 
-echo ">>> [3/6] 正在还原 wzq-claw-md 替换前的备份文件..."
+echo ">>> [4/7] 正在还原 wzq-claw-md 替换前的备份文件..."
 MD_BACKUP="$OPS_DIR/backup/openclaw-pre-md"
 MD_DONE_FLAG="$OPS_DIR/.wzq-claw-md-done"
 OPENCLAW_WORKSPACE="$OPENCLAW_HOME/workspace"
@@ -53,13 +61,13 @@ else
     rm -f "$MD_DONE_FLAG"
 fi
 
-echo ">>> [4/6] 正在清理业务运行目录..."
+echo ">>> [5/7] 正在清理业务运行目录..."
 if [ -d "$OPS_DIR" ]; then
     echo "清理 $OPS_DIR ..."
     rm -rf "$OPS_DIR"
 fi
 
-echo ">>> [5/6] 正在重置 OpenClaw 配置与技能..."
+echo ">>> [6/7] 正在重置 OpenClaw 配置与技能..."
 if [ -d "$OPENCLAW_HOME" ]; then
     echo "清理 $OPENCLAW_HOME 中的技能与扩展..."
     rm -rf "$OPENCLAW_HOME/skills"
@@ -94,7 +102,7 @@ if [ -d "$OPENCLAW_HOME" ]; then
     fi
 fi
 
-echo ">>> [6/6] 正在清理环境变量 (.bashrc 永久清理与当前会话)..."
+echo ">>> [7/7] 正在清理环境变量 (.bashrc 永久清理与当前会话)..."
 ENV_FILE="$HOME/.bashrc"
 if [ -f "$ENV_FILE" ]; then
     echo "从 $ENV_FILE 中移除 WZQ 相关环境变量..."
