@@ -188,8 +188,8 @@ timeout 60s openclaw gateway install || true
 timeout 60s openclaw gateway restart
 
 echo ">>> [7/8] 预配置 skill 定时任务 (disabled)..."
-# gateway 启动后才能操作 cron，等待 gateway 完全就绪
-sleep 5
+# gateway 启动后才能操作 cron，等待就绪
+sleep 10
 
 # --- Market Pulse 盘前/盘后定时任务 ---
 # 检查是否已存在，避免重复创建；创建为 disabled 状态，用户确认后自行启用
@@ -212,7 +212,7 @@ fi
 if ! openclaw cron list --json 2>/dev/null | grep -q "market-pulse-postmarket"; then
   openclaw cron create \
     --name "market-pulse-postmarket" \
-    --cron "0 19 * * 1-5" \
+    --cron "30 16 * * 1-5" \
     --tz "Asia/Shanghai" \
     --session main \
     --system-event "盘后复盘｜涨跌·板块·资金·自选股" \
