@@ -187,8 +187,6 @@ echo ">>> [7/8] 预配置 skill 定时任务 (disabled)..."
 # gateway 启动后才能操作 cron，等待 gateway 完全就绪
 sleep 5
 
-TODAY=$(date +%Y%m%d)
-
 # --- Market Pulse 盘前/盘后定时任务 ---
 # 检查是否已存在，避免重复创建；创建为 disabled 状态，用户确认后自行启用
 set +e
@@ -197,12 +195,9 @@ if ! openclaw cron list --json 2>/dev/null | grep -q "market-pulse-premarket"; t
     --name "market-pulse-premarket" \
     --cron "30 8 * * 1-5" \
     --tz "Asia/Shanghai" \
-    --session isolated \
+    --session main \
     --system-event "现在是盘前时间，请执行每日盘前分析。" \
     --description "盘前市场脉搏：每个交易日8:30推送隔夜要闻、指数行情、板块资金、自选股预警。说「启用市场脉搏」即可开启。" \
-    --announce \
-    --channel wzq-channel \
-    --to "sess:$TODAY" \
     --disabled \
   && echo "market-pulse-premarket 创建成功 (disabled)" \
   || echo "警告: market-pulse-premarket 创建失败"
@@ -215,12 +210,9 @@ if ! openclaw cron list --json 2>/dev/null | grep -q "market-pulse-postmarket"; 
     --name "market-pulse-postmarket" \
     --cron "30 16 * * 1-5" \
     --tz "Asia/Shanghai" \
-    --session isolated \
+    --session main \
     --system-event "现在是盘后时间，请执行每日盘后分析。" \
     --description "盘后市场脉搏：每个交易日16:30推送收盘总结、板块涨跌、资金流向、自选股复盘。说「启用市场脉搏」即可开启。" \
-    --announce \
-    --channel wzq-channel \
-    --to "sess:$TODAY" \
     --disabled \
   && echo "market-pulse-postmarket 创建成功 (disabled)" \
   || echo "警告: market-pulse-postmarket 创建失败"
