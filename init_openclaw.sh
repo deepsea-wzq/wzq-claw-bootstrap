@@ -199,7 +199,7 @@ if ! openclaw cron list --json 2>/dev/null | grep -q "market-pulse-premarket"; t
     --tz "Asia/Shanghai" \
     --session isolated \
     --system-event "现在是盘前时间，请执行每日盘前分析。" \
-    --description "Market Pulse 盘前分析：每个交易日 08:30 自动执行，涵盖全球隔夜要闻、A股/港股/美股指数行情、板块热度与资金流向、自选股盘前扫描与异动预警" \
+    --description "盘前市场脉搏：每个交易日8:30推送隔夜要闻、指数行情、板块资金、自选股预警。说「启用市场脉搏」即可开启。" \
     --announce \
     --channel wzq-channel \
     --to "sess:$TODAY" \
@@ -217,7 +217,7 @@ if ! openclaw cron list --json 2>/dev/null | grep -q "market-pulse-postmarket"; 
     --tz "Asia/Shanghai" \
     --session isolated \
     --system-event "现在是盘后时间，请执行每日盘后分析。" \
-    --description "Market Pulse 盘后复盘：每个交易日 16:30 自动执行，涵盖指数收盘总结、板块涨跌排行、主力资金流向、自选股当日表现回顾与次日关注点" \
+    --description "盘后市场脉搏：每个交易日16:30推送收盘总结、板块涨跌、资金流向、自选股复盘。说「启用市场脉搏」即可开启。" \
     --announce \
     --channel wzq-channel \
     --to "sess:$TODAY" \
