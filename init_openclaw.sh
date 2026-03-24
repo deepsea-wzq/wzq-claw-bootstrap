@@ -184,68 +184,42 @@ timeout 60s openclaw gateway install || true
 timeout 60s openclaw gateway restart
 
 echo ">>> [7/8] 预配置 skill 定时任务 (disabled)..."
-# gateway 启动后才能操作 cron，等待 gateway 完全就绪
-echo "等待 gateway 就绪..."
-GATEWAY_READY=false
-for i in $(seq 1 12); do
-  if openclaw cron list --json >/dev/null 2>&1; then
-    GATEWAY_READY=true
-    echo "gateway 已就绪 (第${i}次检查)"
-    break
-  fi
-  echo "gateway 未就绪，等待 5 秒... (${i}/12)"
-  sleep 5
-done
-if [ "$GATEWAY_READY" != "true" ]; then
-  echo "警告: gateway 60 秒内未就绪，跳过 cron 创建"
+# gateway 启动后才能操作 cron，等待就绪
+sleep 10
+
+# --- Market Pulse 盘前/盘后定时任务 ---
+# 检查是否已存在，避免重复创建；创建为 disabled 状态，用户确认后自行启用
+set +e
+if ! openclaw cron list --json 2>/dev/null | grep -q "market-pulse-premarket"; then
+  openclaw cron create \
+    --name "market-pulse-premarket" \
+    --cron "30 8 * * 1-5" \
+    --tz "Asia/Shanghai" \
+    --session main \
+    --system-event "盘前分析｜要闻·行情·资金·自选股" \
+    --description "每个交易日8:30自动推送盘前全景分析。当前未启用，对我说「开启盘前分析」即可。" \
+    --disabled \
+  && echo "market-pulse-premarket 创建成功 (disabled)" \
+  || echo "警告: market-pulse-premarket 创建失败"
 else
-  # --- Market Pulse 盘前/盘后定时任务 ---
-  # 获取完整任务列表用于去重检查
-  EXISTING_JOBS=$(openclaw cron list --json 2>/dev/null || echo "[]")
-
-  set +e
-  # 盘前任务
-  if echo "$EXISTING_JOBS" | grep -q '"market-pulse-premarket"'; then
-    echo "market-pulse-premarket 已存在，跳过"
-  else
-    openclaw cron create \
-      --name "market-pulse-premarket" \
-      --cron "30 8 * * 1-5" \
-      --tz "Asia/Shanghai" \
-      --session main \
-      --system-event "盘前分析｜要闻·行情·资金·自选股" \
-      --description "每个交易日8:30自动推送盘前全景分析。当前未启用，对我说「开启盘前分析」即可。" \
-      --disabled \
-    && echo "market-pulse-premarket 创建成功 (disabled)" \
-    || echo "警告: market-pulse-premarket 创建失败"
-  fi
-
-  # 盘后任务
-  if echo "$EXISTING_JOBS" | grep -q '"market-pulse-postmarket"'; then
-    echo "market-pulse-postmarket 已存在，跳过"
-  else
-    openclaw cron create \
-      --name "market-pulse-postmarket" \
-      --cron "10 19 * * 1-5" \
-      --tz "Asia/Shanghai" \
-      --session main \
-      --system-event "盘后复盘｜涨跌·板块·资金·自选股" \
-      --description "每个交易日16:30自动推送盘后复盘分析。当前未启用，对我说「开启盘后复盘」即可。" \
-      --disabled \
-    && echo "market-pulse-postmarket 创建成功 (disabled)" \
-    || echo "警告: market-pulse-postmarket 创建失败"
-  fi
-  set -e
-
-  # 验证：检查最终任务数量
-  FINAL_JOBS=$(openclaw cron list --json 2>/dev/null || echo "[]")
-  PRE_COUNT=$(echo "$FINAL_JOBS" | grep -o '"market-pulse-premarket"' | wc -l)
-  POST_COUNT=$(echo "$FINAL_JOBS" | grep -o '"market-pulse-postmarket"' | wc -l)
-  echo "验证: premarket=${PRE_COUNT}个, postmarket=${POST_COUNT}个"
-  if [ "$PRE_COUNT" -gt 1 ] || [ "$POST_COUNT" -gt 1 ]; then
-    echo "警告: 检测到重复任务！请手动检查 ~/.openclaw/cron/jobs.json"
-  fi
+  echo "market-pulse-premarket 已存在，跳过"
 fi
+
+if ! openclaw cron list --json 2>/dev/null | grep -q "market-pulse-postmarket"; then
+  openclaw cron create \
+    --name "market-pulse-postmarket" \
+    --cron "10 19 * * 1-5" \
+    --tz "Asia/Shanghai" \
+    --session main \
+    --system-event "盘后复盘｜涨跌·板块·资金·自选股" \
+    --description "每个交易日16:30自动推送盘后复盘分析。当前未启用，对我说「开启盘后复盘」即可。" \
+    --disabled \
+  && echo "market-pulse-postmarket 创建成功 (disabled)" \
+  || echo "警告: market-pulse-postmarket 创建失败"
+else
+  echo "market-pulse-postmarket 已存在，跳过"
+fi
+set -e
 
 echo ">>> [8/8] 配置定时监控任务 (Crontab)..."
 MONITOR_SCRIPT="$OPS_DIR/bootstrap/monitor_updates.sh"
