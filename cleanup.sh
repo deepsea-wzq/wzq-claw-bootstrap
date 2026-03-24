@@ -14,27 +14,36 @@ JOBS_FILE="$OPENCLAW_HOME/cron/jobs.json"
 
 echo ">>> [1/7] 正在删除 market-pulse 定时任务（gateway 运行中才能操作）..."
 if command -v openclaw >/dev/null 2>&1; then
-    openclaw cron delete --name "market-pulse-premarket" 2>/dev/null && echo "market-pulse-premarket 已删除" || echo "openclaw cron delete market-pulse-premarket 失败，稍后兜底清理"
-    openclaw cron delete --name "market-pulse-postmarket" 2>/dev/null && echo "market-pulse-postmarket 已删除" || echo "openclaw cron delete market-pulse-postmarket 失败，稍后兜底清理"
+    # 循环删除同名任务，直到全部清除（防止存在多个同名任务）
+    for TASK_NAME in market-pulse-premarket market-pulse-postmarket; do
+        DEL_COUNT=0
+        while openclaw cron list --json 2>/dev/null | grep -q "$TASK_NAME"; do
+            openclaw cron delete --name "$TASK_NAME" 2>/dev/null && DEL_COUNT=$((DEL_COUNT+1)) || break
+        done
+        [ $DEL_COUNT -gt 0 ] && echo "$TASK_NAME 已删除 (${DEL_COUNT}个)" || echo "$TASK_NAME 不存在或删除失败，稍后兜底"
+    done
 else
     echo "未发现 openclaw 命令，跳过 CLI 删除。"
-fi
-# 兜底：直接从 jobs.json 中移除（无论上面是否成功）
-if [ -f "$JOBS_FILE" ] && command -v jq >/dev/null 2>&1; then
-    echo "使用 jq 兜底清理 jobs.json 中的 market-pulse 任务..."
-    TMP_JOBS=$(mktemp)
-    jq '.jobs |= map(select(.name != "market-pulse-premarket" and .name != "market-pulse-postmarket"))' "$JOBS_FILE" > "$TMP_JOBS" && mv "$TMP_JOBS" "$JOBS_FILE"
-    echo "jobs.json 已清理。"
-elif [ -f "$JOBS_FILE" ]; then
-    echo "警告: jq 不可用，无法兜底清理 jobs.json。请手动检查 $JOBS_FILE"
 fi
 
 echo ">>> [2/7] 正在停止 OpenClaw 服务..."
 if command -v openclaw >/dev/null 2>&1; then
     openclaw gateway stop || true
+    sleep 2
     echo "服务已停止。"
 else
     echo "未发现 openclaw 命令，跳过停止服务步骤。"
+fi
+
+# 兜底：gateway 停止后直接清理 jobs.json（无竞态风险）
+if [ -f "$JOBS_FILE" ] && command -v jq >/dev/null 2>&1; then
+    echo "使用 jq 兜底清理 jobs.json 中的 market-pulse 任务..."
+    TMP_JOBS=$(mktemp)
+    jq '.jobs |= map(select(.name | startswith("market-pulse-") | not))' "$JOBS_FILE" > "$TMP_JOBS" && mv "$TMP_JOBS" "$JOBS_FILE"
+    REMAINING=$(jq '[.jobs[] | select(.name | startswith("market-pulse-"))] | length' "$JOBS_FILE" 2>/dev/null || echo "?")
+    echo "jobs.json 清理完成，残留 market-pulse 任务数: $REMAINING"
+elif [ -f "$JOBS_FILE" ]; then
+    echo "警告: jq 不可用，无法兜底清理 jobs.json。请手动检查 $JOBS_FILE"
 fi
 
 echo ">>> [3/7] 正在移除定时监控任务 (Crontab)..."
