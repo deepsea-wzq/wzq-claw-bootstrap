@@ -107,7 +107,7 @@ fi
 
 echo ">>> [3/4] 正在下载 wzq-claw-bootstrap 运维代码"
 rm -rf "$BOOTSTRAP_DIR"
-timeout 60s git clone --depth 1 --branch zhong_dev https://github.com/deepsea-wzq/wzq-claw-bootstrap "$BOOTSTRAP_DIR"
+timeout 60s git clone --depth 1 https://github.com/deepsea-wzq/wzq-claw-bootstrap "$BOOTSTRAP_DIR"
 
 echo ">>> [4/4] 启动初始化脚本..."
 cd "$BOOTSTRAP_DIR"
