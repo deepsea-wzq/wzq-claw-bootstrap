@@ -210,7 +210,7 @@ fi
 if ! openclaw cron list --json 2>/dev/null | grep -q "market-pulse-postmarket"; then
   openclaw cron create \
     --name "market-pulse-postmarket" \
-    --cron "00 16 * * 1-5" \
+    --cron "30 16 * * 1-5" \
     --tz "Asia/Shanghai" \
     --session isolated \
     --message "执行 market-pulse skill，进行盘后复盘：指数收盘、板块涨跌、资金流向、自选股复盘，生成盘后市场脉搏报告。" \
