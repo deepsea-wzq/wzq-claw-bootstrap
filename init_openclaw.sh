@@ -196,7 +196,7 @@ if ! openclaw cron list --json 2>/dev/null | grep -q "market-pulse-premarket"; t
     --cron "30 8 * * 1-5" \
     --tz "Asia/Shanghai" \
     --session isolated \
-    --agent-turn "执行 market-pulse skill，进行盘前分析：隔夜要闻、全球行情、资金流向、自选股扫描，生成盘前市场脉搏报告。" \
+    --message "执行 market-pulse skill，进行盘前分析：隔夜要闻、全球行情、资金流向、自选股扫描，生成盘前市场脉搏报告。" \
     --announce \
     --channel wzq-channel \
     --description "每个交易日8:30自动推送盘前全景分析。当前未启用，对我说「开启盘前分析」即可。" \
@@ -210,10 +210,10 @@ fi
 if ! openclaw cron list --json 2>/dev/null | grep -q "market-pulse-postmarket"; then
   openclaw cron create \
     --name "market-pulse-postmarket" \
-    --cron "55 15 * * 1-5" \
+    --cron "00 16 * * 1-5" \
     --tz "Asia/Shanghai" \
     --session isolated \
-    --agent-turn "执行 market-pulse skill，进行盘后复盘：指数收盘、板块涨跌、资金流向、自选股复盘，生成盘后市场脉搏报告。" \
+    --message "执行 market-pulse skill，进行盘后复盘：指数收盘、板块涨跌、资金流向、自选股复盘，生成盘后市场脉搏报告。" \
     --announce \
     --channel wzq-channel \
     --description "每个交易日16:30自动推送盘后复盘分析。当前未启用，对我说「开启盘后复盘」即可。" \
