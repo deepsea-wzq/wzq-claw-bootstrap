@@ -199,8 +199,10 @@ if ! openclaw cron list --json 2>/dev/null | grep -q "market-pulse-premarket"; t
     --name "market-pulse-premarket" \
     --cron "30 8 * * 1-5" \
     --tz "Asia/Shanghai" \
-    --session main \
-    --system-event "盘前分析｜要闻·行情·资金·自选股" \
+    --session isolated \
+    --message "执行 market-pulse skill，进行盘前分析：隔夜要闻、全球行情、资金流向、自选股扫描，生成盘前市场脉搏报告。" \
+    --announce \
+    --channel wzq-channel \
     --description "每个交易日8:30自动推送盘前全景分析。当前未启用，对我说「开启盘前分析」即可。" \
     --disabled \
   && echo "market-pulse-premarket 创建成功 (disabled)" \
@@ -214,8 +216,10 @@ if ! openclaw cron list --json 2>/dev/null | grep -q "market-pulse-postmarket"; 
     --name "market-pulse-postmarket" \
     --cron "30 16 * * 1-5" \
     --tz "Asia/Shanghai" \
-    --session main \
-    --system-event "盘后复盘｜涨跌·板块·资金·自选股" \
+    --session isolated \
+    --message "执行 market-pulse skill，进行盘后复盘：指数收盘、板块涨跌、资金流向、自选股复盘，生成盘后市场脉搏报告。" \
+    --announce \
+    --channel wzq-channel \
     --description "每个交易日16:30自动推送盘后复盘分析。当前未启用，对我说「开启盘后复盘」即可。" \
     --disabled \
   && echo "market-pulse-postmarket 创建成功 (disabled)" \
