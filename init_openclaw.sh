@@ -200,6 +200,7 @@ if ! openclaw cron list --json 2>/dev/null | grep -q "market-pulse-premarket"; t
     --cron "30 8 * * 1-5" \
     --tz "Asia/Shanghai" \
     --session isolated \
+    --stagger 30m \
     --message "执行 market-pulse skill，进行盘前分析：隔夜要闻、全球行情、资金流向、自选股扫描，生成盘前市场脉搏报告。" \
     --announce \
     --channel wzq-channel \
@@ -217,6 +218,7 @@ if ! openclaw cron list --json 2>/dev/null | grep -q "market-pulse-postmarket"; 
     --cron "30 16 * * 1-5" \
     --tz "Asia/Shanghai" \
     --session isolated \
+    --stagger 30m \
     --message "执行 market-pulse skill，进行盘后复盘：指数收盘、板块涨跌、资金流向、自选股复盘，生成盘后市场脉搏报告。" \
     --announce \
     --channel wzq-channel \
