@@ -61,7 +61,11 @@ deploy_repo_skills() {
     find "$repo_dir" -name "SKILL.md" | while read -r skill_md; do
         skill_src_dir=$(dirname "$skill_md")
         skill_id=$(basename "$skill_src_dir")
-        [ "$skill_src_dir" == "$repo_dir" ] && continue
+
+        if [ "$skill_src_dir" == "$repo_dir" ]; then
+            # SKILL.md 在仓库根目录：整个仓库就是一个技能，以仓库名作为 skill_id
+            skill_id="$repo_name"
+        fi
         
         # 覆盖安装
         rm -rf "$SKILLS_DIR/$skill_id"
@@ -157,6 +161,24 @@ for repo in "${SKILL_REPOS[@]}"; do
         # 针对 wzq-skills，始终同步远程地址以反映当前环境变量状态（令牌可能增加或移除）
         if [[ "$repo_name" == "wzq-skills" ]]; then
             git -C "$local_cache" remote set-url origin "$current_repo_url"
+        fi
+
+        # 补偿部署：缓存已存在但技能未安装到 skills 目录时，先补装
+        NEED_COMPENSATE=0
+        while read -r skill_md; do
+            skill_src_dir=$(dirname "$skill_md")
+            if [ "$skill_src_dir" == "$local_cache" ]; then
+                sid="$repo_name"
+            else
+                sid=$(basename "$skill_src_dir")
+            fi
+            [ ! -d "$SKILLS_DIR/$sid" ] && NEED_COMPENSATE=1 && break
+        done < <(find "$local_cache" -name "SKILL.md")
+
+        if [ $NEED_COMPENSATE -eq 1 ]; then
+            echo "[ManageSkills] 检测到仓库 $repo_name 有技能未安装，执行补偿部署"
+            deploy_repo_skills "$local_cache"
+            CHANGED=1
         fi
 
         if check_git_update "$local_cache"; then
