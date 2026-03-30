@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # OpenClaw 环境清理脚本
-# 功能：删除定时任务、停止服务、移除配置、清理缓存、卸载 Crontab 任务
+# 功能：删除定时任务、停止服务、还原预装技能、移除配置、清理缓存、卸载 Crontab 任务
 # 注意：cron 删除必须在 gateway 停止之前执行，否则 openclaw CLI 无法操作 cron
 
 set -e
@@ -12,7 +12,7 @@ OPENCLAW_HOME="$HOME/.openclaw"
 MONITOR_SCRIPT="$OPS_DIR/bootstrap/monitor_updates.sh"
 JOBS_FILE="$OPENCLAW_HOME/cron/jobs.json"
 
-echo ">>> [1/7] 正在删除 market-pulse 定时任务（gateway 运行中才能操作）..."
+echo ">>> [1/8] 正在删除 market-pulse 定时任务（gateway 运行中才能操作）..."
 if command -v openclaw >/dev/null 2>&1; then
     openclaw cron delete --name "market-pulse-premarket" 2>/dev/null && echo "market-pulse-premarket 已删除" || echo "market-pulse-premarket 删除失败或不存在"
     openclaw cron delete --name "market-pulse-postmarket" 2>/dev/null && echo "market-pulse-postmarket 已删除" || echo "market-pulse-postmarket 删除失败或不存在"
@@ -20,7 +20,7 @@ else
     echo "未发现 openclaw 命令，跳过 CLI 删除。"
 fi
 
-echo ">>> [2/7] 正在停止 OpenClaw 服务..."
+echo ">>> [2/8] 正在停止 OpenClaw 服务..."
 if command -v openclaw >/dev/null 2>&1; then
     openclaw gateway stop || true
     echo "服务已停止。"
@@ -38,7 +38,7 @@ elif [ -f "$JOBS_FILE" ]; then
     echo "警告: jq 不可用，无法兜底清理 jobs.json。请手动检查 $JOBS_FILE"
 fi
 
-echo ">>> [3/7] 正在移除定时监控任务 (Crontab)..."
+echo ">>> [3/8] 正在移除定时监控任务 (Crontab)..."
 if crontab -l 2>/dev/null | grep -q "$MONITOR_SCRIPT"; then
     (crontab -l 2>/dev/null | grep -v "$MONITOR_SCRIPT" || true) | crontab -
     echo "Crontab 任务已移除。"
@@ -46,7 +46,7 @@ else
     echo "Crontab 中未发现相关任务，跳过。"
 fi
 
-echo ">>> [4/7] 正在还原 wzq-claw-md 替换前的备份文件..."
+echo ">>> [4/8] 正在还原 wzq-claw-md 替换前的备份文件..."
 MD_BACKUP="$OPS_DIR/backup/openclaw-pre-md"
 MD_DONE_FLAG="$OPS_DIR/.wzq-claw-md-done"
 OPENCLAW_WORKSPACE="$OPENCLAW_HOME/workspace"
@@ -73,13 +73,24 @@ else
     rm -f "$MD_DONE_FLAG"
 fi
 
-echo ">>> [5/7] 正在清理业务运行目录..."
+echo ">>> [5/8] 正在清理业务运行目录..."
 if [ -d "$OPS_DIR" ]; then
     echo "清理 $OPS_DIR ..."
     rm -rf "$OPS_DIR"
 fi
 
-echo ">>> [6/7] 正在重置 OpenClaw 配置与技能..."
+echo ">>> [6/8] 正在还原预装技能..."
+BUNDLED_SKILLS_DIR="$OPENCLAW_HOME/workspace/skills"
+BUNDLED_SKILLS_BAK="$OPENCLAW_HOME/workspace/skills_init"
+if [ -d "$BUNDLED_SKILLS_BAK" ]; then
+    rm -rf "$BUNDLED_SKILLS_DIR"
+    mv "$BUNDLED_SKILLS_BAK" "$BUNDLED_SKILLS_DIR"
+    echo "预装技能已从 $BUNDLED_SKILLS_BAK 还原到 $BUNDLED_SKILLS_DIR"
+else
+    echo "未发现预装技能备份目录 ($BUNDLED_SKILLS_BAK)，跳过还原"
+fi
+
+echo ">>> [7/8] 正在重置 OpenClaw 配置与技能..."
 if [ -d "$OPENCLAW_HOME" ]; then
     echo "清理 $OPENCLAW_HOME 中的技能与扩展..."
     rm -rf "$OPENCLAW_HOME/skills"
@@ -89,7 +100,7 @@ if [ -d "$OPENCLAW_HOME" ]; then
     if [ -f "$OPENCLAW_HOME/openclaw.json" ] && command -v jq >/dev/null 2>&1; then
         echo "使用 jq 重置 openclaw.json 配置项..."
         TMP_JSON=$(mktemp)
-        jq 'del(.models.providers["finance-gateway"], .channels["wzq-channel"], .agents.defaults.model.primary, .plugins.entries["wzq-channel"], .env.vars.WZQ_APIKEY) | if .plugins.allow then .plugins.allow |= map(select(. != "wzq-channel")) else . end' "$OPENCLAW_HOME/openclaw.json" > "$TMP_JSON" && mv "$TMP_JSON" "$OPENCLAW_HOME/openclaw.json"
+        jq 'del(.models.providers["finance-gateway"], .channels["wzq-channel"], .agents.defaults.model.primary, .agents.defaults.blockStreamingDefault, .agents.defaults.blockStreamingBreak, .agents.defaults.blockStreamingChunk, .plugins.entries["wzq-channel"], .env.vars.WZQ_APIKEY, .skills.allowBundled) | if .plugins.allow then .plugins.allow |= map(select(. != "wzq-channel")) else . end' "$OPENCLAW_HOME/openclaw.json" > "$TMP_JSON" && mv "$TMP_JSON" "$OPENCLAW_HOME/openclaw.json"
         echo "openclaw.json 配置项已清理。"
     elif command -v openclaw >/dev/null 2>&1; then
         echo "jq 不可用，尝试使用 openclaw config unset..."
@@ -100,15 +111,19 @@ if [ -d "$OPENCLAW_HOME" ]; then
         openclaw config unset "models.providers.finance-gateway" || true
         openclaw config unset "channels.wzq-channel" || true
         openclaw config unset "agents.defaults.model.primary" || true
+        openclaw config unset "agents.defaults.blockStreamingDefault" || true
+        openclaw config unset "agents.defaults.blockStreamingBreak" || true
+        openclaw config unset "agents.defaults.blockStreamingChunk" || true
         openclaw config unset "plugins.entries.wzq-channel" || true
         openclaw config unset "plugins.allow" || true
         openclaw config unset "env.vars.WZQ_APIKEY" || true
+        openclaw config unset "skills.allowBundled" || true
     else
         echo "警告: jq 和 openclaw 均不可用，无法清理 openclaw.json。请手动编辑 $OPENCLAW_HOME/openclaw.json"
     fi
 fi
 
-echo ">>> [7/7] 正在清理环境变量 (.bashrc 永久清理与当前会话)..."
+echo ">>> [8/8] 正在清理环境变量 (.bashrc 永久清理与当前会话)..."
 ENV_FILE="$HOME/.bashrc"
 if [ -f "$ENV_FILE" ]; then
     echo "从 $ENV_FILE 中移除 WZQ 相关环境变量..."

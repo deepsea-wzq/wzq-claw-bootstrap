@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # OpenClaw 定制化初始化脚本 (业务独立目录版)
-# 执行顺序：环境初始化 -> 技能部署 -> 插件部署 -> MD资源替换 -> 配置写入 -> 服务重启 -> 技能定时任务预配置
+# 执行顺序：环境初始化 -> 预装技能清理 -> 技能部署 -> 插件部署 -> MD资源替换
+#          -> 配置写入 -> 服务重启 -> 技能定时任务预配置 -> 定时监控配置
 
 set -e
 
@@ -17,7 +18,7 @@ LOG_FILE="$LOG_DIR/init_$CURRENT_DATE.log"
 mkdir -p "$LOG_DIR" "$SKILLS_CACHE" "$EXT_CACHE"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-echo ">>> [1/7] 环境变量同步与注入..."
+echo ">>> [1/9] 环境变量同步与注入..."
 # 优先使用 WZQ 系列注入变量，若无则使用默认值
 LLM_BASE_URL=${LLM_BASE_URL:-"https://proxy.finance.qq.com/cgi/cgi-bin/openai/sse/openclaw/v1"}
 LLM_API_KEY=${WZQ_LLMKEY:-${LLM_API_KEY:-""}}
@@ -26,7 +27,19 @@ LLM_PROVIDER_NAME=${LLM_PROVIDER_NAME:-"finance-gateway"}
 USER_WS_URL=${USER_WS_URL:-"wss://wzq.tenpay.com/ws/openclaw"}
 USER_WS_TOKEN=${WZQ_APIKEY:-${USER_WS_TOKEN:-"user-token-xyz"}}
 
-echo ">>> [2/7] 拉取并部署深海技能..."
+echo ">>> [2/9] 清理预装技能..."
+# 预装技能大部分不需要或使用门槛高，不适合当前业务场景，整体移走备份
+BUNDLED_SKILLS_DIR="$HOME/.openclaw/workspace/skills"
+BUNDLED_SKILLS_BAK="$HOME/.openclaw/workspace/skills_init"
+if [ -d "$BUNDLED_SKILLS_DIR" ]; then
+    rm -rf "$BUNDLED_SKILLS_BAK"
+    mv "$BUNDLED_SKILLS_DIR" "$BUNDLED_SKILLS_BAK"
+    echo "预装技能已移至 $BUNDLED_SKILLS_BAK"
+else
+    echo "预装技能目录不存在，跳过清理"
+fi
+
+echo ">>> [3/9] 拉取并部署深海技能..."
 # 环境变量已通过 export 传递给子脚本
 # manage_skills.sh 退出码: 0=无变更, 2=有变更(均为成功), 1=出错
 set +e
@@ -37,7 +50,7 @@ if [ $SKILL_SYNC_RC -eq 1 ]; then
     echo "警告: 技能同步脚本执行异常，跳过"
 fi
 
-echo ">>> [3/7] 安装 wzq-channel 插件..."
+echo ">>> [4/9] 安装 wzq-channel 插件..."
 EXT_DIR="$EXT_CACHE/wzq-channel"
 if [ ! -d "$EXT_DIR/.git" ]; then
     timeout 60s git clone --depth 1 "https://github.com/deepsea-wzq/wzq_channel" "$EXT_DIR" || { echo "拉取插件失败"; exit 1; }
@@ -76,7 +89,7 @@ echo "正在执行插件依赖安装 (npm install)..."
     fi
 }) || { echo "插件依赖安装失败"; exit 1; }
 
-echo ">>> [4/7] 下载 wzq-claw-md 资源并替换本地文件..."
+echo ">>> [5/9] 下载 wzq-claw-md 资源并替换本地文件..."
 MD_DONE_FLAG="$OPS_DIR/.wzq-claw-md-done"
 if [ ! -f "$MD_DONE_FLAG" ]; then
     MD_CACHE="$OPS_DIR/cache/wzq-claw-md"
@@ -124,12 +137,17 @@ else
     echo "wzq-claw-md 已初始化过，跳过 (标记文件: $MD_DONE_FLAG)"
 fi
 
-echo ">>> [5/7] 写入 openclaw.json 配置 (增量设置)..."
-# 1. 启用插件系统并设置 wzq-channel 状态
+echo ">>> [6/9] 写入 openclaw.json 配置 (增量设置)..."
+# 1. 禁止内置技能自动加载，避免干扰业务环境
+timeout 15s openclaw config set skills.allowBundled '["none"]' --strict-json \
+    && echo "已禁止内置技能自动加载 (skills.allowBundled=[\"none\"])" \
+    || echo "警告: 禁止内置技能自动加载配置写入失败"
+
+# 2. 启用插件系统并设置 wzq-channel 状态
 timeout 15s openclaw config set "plugins.enabled" true
 timeout 15s openclaw config set "plugins.entries.wzq-channel.enabled" true
 
-# 2. 增量添加至信任名单 (allow 列表)
+# 3. 增量添加至信任名单 (allow 列表)
 CURRENT_ALLOW=$(timeout 15s openclaw config get "plugins.allow" 2>/dev/null || echo "[]")
 if [[ $CURRENT_ALLOW != *"wzq-channel"* ]]; then
     if [ "$CURRENT_ALLOW" == "[]" ] || [ -z "$CURRENT_ALLOW" ]; then
@@ -141,7 +159,7 @@ if [[ $CURRENT_ALLOW != *"wzq-channel"* ]]; then
     fi
 fi
 
-# 模型配置 (使用全量 JSON 写入方式)
+# 4. 模型配置 (使用全量 JSON 写入方式)
 timeout 15s openclaw config set "models.providers.$LLM_PROVIDER_NAME" "{
   \"baseUrl\": \"$LLM_BASE_URL\",
   \"apiKey\": \"$LLM_API_KEY\",
@@ -159,16 +177,21 @@ timeout 15s openclaw config set "models.providers.$LLM_PROVIDER_NAME" "{
 
 timeout 15s openclaw config set "agents.defaults.model.primary" "$LLM_PROVIDER_NAME/claude-sonnet-4-6"
 
-# 流式输出配置：默认开启 block streaming，句子级别分段
+# 5. 流式输出配置：开启 block streaming，段落级别分段，message_end 时断流
 timeout 15s openclaw config set "agents.defaults.blockStreamingDefault" "on"
-timeout 15s openclaw config set "agents.defaults.blockStreamingChunk.breakPreference" "sentence"
+timeout 15s openclaw config set "agents.defaults.blockStreamingBreak" "message_end"
+timeout 15s openclaw config set "agents.defaults.blockStreamingChunk" '{
+  "minChars": 800,
+  "maxChars": 3500,
+  "breakPreference": "paragraph"
+}' --strict-json
 
-# 注入关键环境变量到 openclaw 运行时，确保 crontab 等非交互式环境下服务也能获取
+# 6. 注入关键环境变量到 openclaw 运行时，确保 crontab 等非交互式环境下服务也能获取
 if [ -n "$WZQ_APIKEY" ]; then
     timeout 15s openclaw config set "env.vars.WZQ_APIKEY" "$WZQ_APIKEY"
 fi
 
-# 1. 配置渠道 (包含默认 account 映射)
+# 7. 配置渠道 (包含默认 account 映射)
 timeout 15s openclaw config set "channels.wzq-channel" "{
   \"accounts\": {
     \"default\": {
@@ -180,14 +203,12 @@ timeout 15s openclaw config set "channels.wzq-channel" "{
   }
 }" --strict-json
 
-# 2. 启用插件系统及具体插件（已在 plugins 全量配置中合并设置）
-# 3. 渠道配置已完成，执行收尾逻辑
-echo ">>> [6/8] 重启 gateway 服务..."
+echo ">>> [7/9] 重启 gateway 服务..."
 # 确保服务已安装（新版本 OpenClaw 需先执行 install）
 timeout 60s openclaw gateway install || true
 timeout 60s openclaw gateway restart
 
-echo ">>> [7/8] 预配置 skill 定时任务 (disabled)..."
+echo ">>> [8/9] 预配置 skill 定时任务 (disabled)..."
 # gateway 启动后才能操作 cron，等待就绪
 sleep 10
 
@@ -231,7 +252,7 @@ else
 fi
 set -e
 
-echo ">>> [8/8] 配置定时监控任务 (Crontab)..."
+echo ">>> [9/9] 配置定时监控任务 (Crontab)..."
 MONITOR_SCRIPT="$OPS_DIR/bootstrap/monitor_updates.sh"
 # 日志重定向由脚本内部处理，Crontab 仅负责触发
 CRON_JOB="*/5 * * * * $MONITOR_SCRIPT"
