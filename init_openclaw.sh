@@ -250,6 +250,23 @@ if ! openclaw cron list --json 2>/dev/null | grep -q "盘后简报"; then
 else
   echo "盘后简报 已存在，跳过"
 fi
+
+# --- wzq-implicit-daily-review 每日对话记忆沉淀（静默，凌晨2点） ---
+if ! openclaw cron list --json 2>/dev/null | grep -q "wzq-implicit-daily-review"; then
+  openclaw cron create \
+    --name "wzq-implicit-daily-review" \
+    --cron "0 2 * * *" \
+    --tz "Asia/Shanghai" \
+    --session isolated \
+    --stagger 60m \
+    --message "执行 wzq-implicit-daily-review skill" \
+    --no-deliver \
+    --description "每日凌晨静默回顾昨日对话，沉淀用户关注标的到 MEMORY.md。" \
+  && echo "wzq-implicit-daily-review 创建成功 (enabled)" \
+  || echo "警告: wzq-implicit-daily-review 创建失败"
+else
+  echo "wzq-implicit-daily-review 已存在，跳过"
+fi
 set -e
 
 echo ">>> [9/9] 配置定时监控任务 (Crontab)..."
