@@ -12,10 +12,10 @@ OPENCLAW_HOME="$HOME/.openclaw"
 MONITOR_SCRIPT="$OPS_DIR/bootstrap/monitor_updates.sh"
 JOBS_FILE="$OPENCLAW_HOME/cron/jobs.json"
 
-echo ">>> [1/8] 正在删除 market-pulse 定时任务（gateway 运行中才能操作）..."
+echo ">>> [1/8] 正在删除股事简报定时任务（gateway 运行中才能操作）..."
 if command -v openclaw >/dev/null 2>&1; then
-    openclaw cron delete --name "market-pulse-premarket" 2>/dev/null && echo "market-pulse-premarket 已删除" || echo "market-pulse-premarket 删除失败或不存在"
-    openclaw cron delete --name "market-pulse-postmarket" 2>/dev/null && echo "market-pulse-postmarket 已删除" || echo "market-pulse-postmarket 删除失败或不存在"
+    openclaw cron delete --name "盘前简报" 2>/dev/null && echo "盘前简报 已删除" || echo "盘前简报 删除失败或不存在"
+    openclaw cron delete --name "盘后简报" 2>/dev/null && echo "盘后简报 已删除" || echo "盘后简报 删除失败或不存在"
 else
     echo "未发现 openclaw 命令，跳过 CLI 删除。"
 fi
@@ -30,9 +30,9 @@ fi
 
 # 兜底：gateway 停止后直接清理 jobs.json（避免竞态）
 if [ -f "$JOBS_FILE" ] && command -v jq >/dev/null 2>&1; then
-    echo "使用 jq 兜底清理 jobs.json 中的 market-pulse 任务..."
+    echo "使用 jq 兜底清理 jobs.json 中的股事简报任务..."
     TMP_JOBS=$(mktemp)
-    jq '.jobs |= map(select(.name != "market-pulse-premarket" and .name != "market-pulse-postmarket"))' "$JOBS_FILE" > "$TMP_JOBS" && mv "$TMP_JOBS" "$JOBS_FILE"
+    jq '.jobs |= map(select(.name != "盘前简报" and .name != "盘后简报"))' "$JOBS_FILE" > "$TMP_JOBS" && mv "$TMP_JOBS" "$JOBS_FILE"
     echo "jobs.json 已清理。"
 elif [ -f "$JOBS_FILE" ]; then
     echo "警告: jq 不可用，无法兜底清理 jobs.json。请手动检查 $JOBS_FILE"
