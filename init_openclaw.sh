@@ -212,43 +212,43 @@ echo ">>> [8/9] 预配置 skill 定时任务 (disabled)..."
 # gateway 启动后才能操作 cron，等待就绪
 sleep 10
 
-# --- Market Pulse 盘前/盘后定时任务 ---
+# --- 股事简报 盘前/盘后定时任务 ---
 # 检查是否已存在，避免重复创建；创建为 disabled 状态，用户确认后自行启用
 set +e
-if ! openclaw cron list --json 2>/dev/null | grep -q "market-pulse-premarket"; then
+if ! openclaw cron list --json 2>/dev/null | grep -q "盘前简报"; then
   openclaw cron create \
-    --name "market-pulse-premarket" \
+    --name "盘前简报" \
     --cron "30 8 * * 1-5" \
     --tz "Asia/Shanghai" \
     --session isolated \
     --stagger 30m \
-    --message "执行 market-pulse skill，进行盘前分析：隔夜要闻、全球行情、资金流向、自选股扫描，生成盘前市场脉搏报告。" \
+    --message "执行股事简报，进行盘前分析：隔夜要闻、全球行情、资金流向、自选股扫描，生成盘前简报。" \
     --announce \
     --channel wzq-channel \
-    --description "A股盘前自动推送全景分析，含隔夜要闻、指数行情、自选股扫描。" \
+    --description "A股盘前自选股与市场资讯早报，含隔夜要闻、指数行情、自选股扫描。" \
     --disabled \
-  && echo "market-pulse-premarket 创建成功 (disabled)" \
-  || echo "警告: market-pulse-premarket 创建失败"
+  && echo "盘前简报 创建成功 (disabled)" \
+  || echo "警告: 盘前简报 创建失败"
 else
-  echo "market-pulse-premarket 已存在，跳过"
+  echo "盘前简报 已存在，跳过"
 fi
 
-if ! openclaw cron list --json 2>/dev/null | grep -q "market-pulse-postmarket"; then
+if ! openclaw cron list --json 2>/dev/null | grep -q "盘后简报"; then
   openclaw cron create \
-    --name "market-pulse-postmarket" \
+    --name "盘后简报" \
     --cron "30 16 * * 1-5" \
     --tz "Asia/Shanghai" \
     --session isolated \
     --stagger 30m \
-    --message "执行 market-pulse skill，进行盘后复盘：指数收盘、板块涨跌、资金流向、自选股复盘，生成盘后市场脉搏报告。" \
+    --message "执行股事简报，进行盘后复盘：指数收盘、板块涨跌、资金流向、自选股复盘，生成盘后简报。" \
     --announce \
     --channel wzq-channel \
-    --description "A股盘后自动推送复盘分析，含板块涨跌、资金流向、自选股复盘。" \
+    --description "A股盘后自选股与市场资讯晚报，含板块涨跌、资金流向、自选股复盘。" \
     --disabled \
-  && echo "market-pulse-postmarket 创建成功 (disabled)" \
-  || echo "警告: market-pulse-postmarket 创建失败"
+  && echo "盘后简报 创建成功 (disabled)" \
+  || echo "警告: 盘后简报 创建失败"
 else
-  echo "market-pulse-postmarket 已存在，跳过"
+  echo "盘后简报 已存在，跳过"
 fi
 set -e
 
