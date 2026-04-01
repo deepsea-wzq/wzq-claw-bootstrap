@@ -142,7 +142,81 @@ if [ -d "$EXT_DIR/.git" ]; then
     fi
 fi
 
-# --- 2. 检查技能仓库更新与同步 (调用管理脚本) ---
+# --- 2. 检查 wzq-claw-md 文档更新 (MD 变更检测机制) ---
+# 逻辑：检测到更新时创建“任务清单”，记录旧版指纹。同步完成后销毁清单。
+MD_GIT_REPO="$OPS_DIR/cache/wzq-claw-md"
+MD_WORKSPACE_DIR="$OPENCLAW_HOME/workspace"
+MD_MANIFEST="$OPS_DIR/cache/wzq-claw-md.manifest"
+
+if [ -d "$MD_GIT_REPO/.git" ]; then
+    # 步骤 1: 如果检测到 Git 有更新，生成“旧版本”指纹清单并拉取
+    if check_git_update "$MD_GIT_REPO" && [ ! -f "$MD_MANIFEST" ]; then
+        echo "[MD同步] 检测到文档仓库有新版本，正在生成待更新清单..."
+        # 记录旧版文件的 MD5 (格式: hash path)
+        (cd "$MD_GIT_REPO" && find . -name "*.md" -not -path "*/.*" -exec md5sum {} +) > "$MD_MANIFEST"
+        
+        echo "[MD同步] 正在拉取远程更新..."
+        timeout 60s git -C "$MD_GIT_REPO" pull --quiet || { echo "[MD同步] 警告: Git pull 失败"; rm -f "$MD_MANIFEST"; }
+    fi
+
+    # 步骤 2: 如果清单存在（可能是本次生成，也可能是上次中断残留），执行同步
+    if [ -f "$MD_MANIFEST" ]; then
+        echo "[MD同步] 正在根据清单执行文档同步..."
+        declare -A OLD_MD5_MAP
+        while read -r m_hash m_path; do
+            clean_path="${m_path#./}"
+            OLD_MD5_MAP["$clean_path"]="$m_hash"
+        done < "$MD_MANIFEST"
+
+        # 遍历当前仓库中的所有最新文件 (使用 cd 避免绝对路径中的隐藏目录干扰 find 过滤)
+        (cd "$MD_GIT_REPO" && find . -name "*.md" -not -path "*/.*") | while read -r rel_dot_path; do
+            rel_path="${rel_dot_path#./}"
+            md_file="$MD_GIT_REPO/$rel_path"
+            target_file="$MD_WORKSPACE_DIR/$rel_path"
+            
+            SYNC_SUCCESS=0
+            if [ ! -f "$target_file" ]; then
+                # 工作区不存在 -> 同步
+                mkdir -p "$(dirname "$target_file")"
+                cp "$md_file" "$target_file"
+                echo "[MD同步] 同步新文件: $rel_path"
+                SYNC_SUCCESS=1
+            else
+                WORK_MD5=$(md5sum "$target_file" | cut -d' ' -f1)
+                OLD_MD5=${OLD_MD5_MAP["$rel_path"]}
+                
+                if [ -n "$OLD_MD5" ] && [ "$WORK_MD5" == "$OLD_MD5" ]; then
+                    cp "$md_file" "$target_file"
+                    echo "[MD同步] 已覆盖更新: $rel_path"
+                    SYNC_SUCCESS=1
+                elif [ -z "$OLD_MD5" ]; then
+                    cp "$md_file" "$target_file"
+                    echo "[MD同步] 同步新增文件: $rel_path"
+                    SYNC_SUCCESS=1
+                else
+                    # 已修改，不更新
+                    echo "[MD同步] 检测到本地已修改，保留当前版本: $rel_path"
+                fi
+            fi
+            
+            # 注意：由于在子 shell 中运行，这里需要一种方式把 NEED_RESTART 传出去
+            if [ $SYNC_SUCCESS -eq 1 ]; then
+                touch "$OPS_DIR/.restart_needed"
+            fi
+        done
+        
+        if [ -f "$OPS_DIR/.restart_needed" ]; then
+            NEED_RESTART=1
+            rm -f "$OPS_DIR/.restart_needed"
+        fi
+        
+        # 步骤 3: 同步完成，清理现场
+        rm -f "$MD_MANIFEST"
+        echo "[MD同步] 同步任务完成，清理临时清单。"
+    fi
+fi
+
+# --- 3. 检查技能仓库更新与同步 (调用管理脚本) ---
 set +e # 临时关闭，以便手动检查 exit code
 bash "$BOOTSTRAP_DIR/manage_skills.sh"
 SKILL_SYNC_RC=$?
