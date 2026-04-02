@@ -18,8 +18,7 @@ LOG_FILE="$LOG_DIR/init_$CURRENT_DATE.log"
 mkdir -p "$LOG_DIR" "$SKILLS_CACHE" "$EXT_CACHE"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-echo ">>> [1/9] 环境变量同步与注入..."
-# 优先使用 WZQ 系列注入变量，若无则使用默认值
+echo ">>> [1/10] 环境变量同步与注入..."
 LLM_BASE_URL=${LLM_BASE_URL:-"https://proxy.finance.qq.com/cgi/cgi-bin/openai/sse/openclaw/v1"}
 LLM_API_KEY=${WZQ_LLMKEY:-${LLM_API_KEY:-""}}
 LLM_PROVIDER_NAME=${LLM_PROVIDER_NAME:-"finance-gateway"}
@@ -27,7 +26,7 @@ LLM_PROVIDER_NAME=${LLM_PROVIDER_NAME:-"finance-gateway"}
 USER_WS_URL=${USER_WS_URL:-"wss://wzq.tenpay.com/ws/openclaw"}
 USER_WS_TOKEN=${WZQ_APIKEY:-${USER_WS_TOKEN:-"user-token-xyz"}}
 
-echo ">>> [2/9] 清理预装技能..."
+echo ">>> [2/10] 清理预装技能..."
 # 预装技能大部分不需要或使用门槛高，不适合当前业务场景，整体移走备份
 BUNDLED_SKILLS_DIR="$HOME/.openclaw/workspace/skills"
 BUNDLED_SKILLS_BAK="$HOME/.openclaw/workspace/skills_init"
@@ -39,7 +38,7 @@ else
     echo "预装技能目录不存在，跳过清理"
 fi
 
-echo ">>> [3/9] 拉取并部署深海技能..."
+echo ">>> [3/10] 拉取并部署深海技能..."
 # 环境变量已通过 export 传递给子脚本
 # manage_skills.sh 退出码: 0=无变更, 2=有变更(均为成功), 1=出错
 set +e
@@ -50,7 +49,7 @@ if [ $SKILL_SYNC_RC -eq 1 ]; then
     echo "警告: 技能同步脚本执行异常，跳过"
 fi
 
-echo ">>> [4/9] 安装 wzq-channel 插件..."
+echo ">>> [4/10] 安装 wzq-channel 插件..."
 EXT_DIR="$EXT_CACHE/wzq-channel"
 if [ ! -d "$EXT_DIR/.git" ]; then
     timeout 60s git clone --depth 1 "https://github.com/deepsea-wzq/wzq_channel" "$EXT_DIR" || { echo "拉取插件失败"; exit 1; }
@@ -89,7 +88,7 @@ echo "正在执行插件依赖安装 (npm install)..."
     fi
 }) || { echo "插件依赖安装失败"; exit 1; }
 
-echo ">>> [5/9] 下载 wzq-claw-md 资源并替换本地文件..."
+echo ">>> [5/10] 下载 wzq-claw-md 资源并替换本地文件..."
 MD_DONE_FLAG="$OPS_DIR/.wzq-claw-md-done"
 if [ ! -f "$MD_DONE_FLAG" ]; then
     MD_CACHE="$OPS_DIR/cache/wzq-claw-md"
@@ -137,7 +136,7 @@ else
     echo "wzq-claw-md 已初始化过，跳过 (标记文件: $MD_DONE_FLAG)"
 fi
 
-echo ">>> [6/9] 写入 openclaw.json 配置 (增量设置)..."
+echo ">>> [6/10] 写入 openclaw.json 配置 (增量设置)..."
 # 1. 禁止内置技能自动加载，避免干扰业务环境
 timeout 15s openclaw config set skills.allowBundled '["none"]' --strict-json \
     && echo "已禁止内置技能自动加载 (skills.allowBundled=[\"none\"])" \
@@ -203,12 +202,48 @@ timeout 15s openclaw config set "channels.wzq-channel" "{
   }
 }" --strict-json
 
-echo ">>> [7/9] 重启 gateway 服务..."
+echo ">>> [7/10] 提升 Operator 权限 (如有必要)..."
+DEVICE_AUTH="$HOME/.openclaw/identity/device-auth.json"
+PAIRED_JSON="$HOME/.openclaw/devices/paired.json"
+
+if [ -f "$DEVICE_AUTH" ] && [ -f "$PAIRED_JSON" ] && command -v jq &>/dev/null; then
+    ROLE=$(jq -r '.tokens.operator.role' "$DEVICE_AUTH" 2>/dev/null)
+    if [ "$ROLE" == "operator" ]; then
+        echo "检测到 operator 角色，正在提升权限范围..."
+        
+        # 修改 device-auth.json
+        tmp_auth=$(mktemp)
+        jq '.tokens.operator.scopes = ["operator.admin", "operator.approvals", "operator.pairing", "operator.read", "operator.write"]' "$DEVICE_AUTH" > "$tmp_auth" && mv "$tmp_auth" "$DEVICE_AUTH"
+        
+        # 获取 deviceId 并修改 paired.json
+        DEVICE_ID=$(jq -r '.deviceId' "$DEVICE_AUTH")
+        if [ -n "$DEVICE_ID" ] && [ "$DEVICE_ID" != "null" ]; then
+            if jq -e --arg id "$DEVICE_ID" '.[$id] | select(.role == "operator")' "$PAIRED_JSON" >/dev/null 2>&1; then
+                tmp_paired=$(mktemp)
+                jq --arg id "$DEVICE_ID" '.[$id] |= (
+                    .clientId = "cli" | 
+                    .clientMode = "cli" | 
+                    .scopes = ["operator.read", "operator.admin", "operator.write", "operator.approvals", "operator.pairing"] | 
+                    .approvedScopes = ["operator.read", "operator.admin", "operator.write", "operator.approvals", "operator.pairing"] | 
+                    .tokens.operator.scopes = ["operator.admin", "operator.approvals", "operator.pairing", "operator.read", "operator.write"]
+                )' "$PAIRED_JSON" > "$tmp_paired" && mv "$tmp_paired" "$PAIRED_JSON"
+                echo "paired.json 权限提升与模式切换完成 (probe -> cli)"
+            fi
+        fi
+        echo "device-auth.json 权限提升完成"
+    else
+        echo "role 不是 operator，跳过权限提升 (当前 role: $ROLE)"
+    fi
+else
+    echo "未检测到必要配置文件或 jq 未安装，跳过权限提升"
+fi
+
+echo ">>> [8/10] 重启 gateway 服务..."
 # 确保服务已安装（新版本 OpenClaw 需先执行 install）
 timeout 60s openclaw gateway install || true
 timeout 60s openclaw gateway restart
 
-echo ">>> [8/9] 预配置 skill 定时任务 (disabled)..."
+echo ">>> [9/10] 预配置 skill 定时任务 (disabled)..."
 # gateway 启动后才能操作 cron，等待就绪
 sleep 10
 
@@ -269,7 +304,7 @@ else
 fi
 set -e
 
-echo ">>> [9/9] 配置定时监控任务 (Crontab)..."
+echo ">>> [10/10] 配置定时监控任务 (Crontab)..."
 MONITOR_SCRIPT="$OPS_DIR/bootstrap/monitor_updates.sh"
 # 日志重定向由脚本内部处理，Crontab 仅负责触发
 CRON_JOB="*/5 * * * * $MONITOR_SCRIPT"
