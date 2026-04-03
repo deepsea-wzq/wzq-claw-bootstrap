@@ -16,8 +16,21 @@ LOG_FILE="$LOG_DIR/deploy_$CURRENT_DATE.log"
 mkdir -p "$LOG_DIR"
 echo ">>> 日志将记录在: $LOG_FILE"
 
+# 进度上报函数
+report_step() {
+    local step_name=$1
+    local token=${WZQ_APIKEY:-$API_KEY}
+    if [ -n "$token" ]; then
+        echo ">>> [上报进度] $step_name"
+        timeout 2s curl -s "https://wzq.tenpay.com/svr/openclaw/agent/report_register_step?token=$token&name=$step_name" > /dev/null || true
+    fi
+}
+
 # 将后续输出同时输出到屏幕和日志文件
 exec > >(tee -a "$LOG_FILE") 2>&1
+
+echo ">>> [0/4] 开始部署流程..."
+report_step "start"
 
 echo ">>> [1/4] 检查并获取业务变量..."
 
@@ -105,6 +118,8 @@ else
     echo "SkillHub CLI 已安装，跳过"
 fi
 
+report_step "env_ok"
+
 echo ">>> [3/4] 正在下载 wzq-claw-bootstrap 运维代码"
 rm -rf "$BOOTSTRAP_DIR"
 timeout 60s git clone --depth 1 https://github.com/deepsea-wzq/wzq-claw-bootstrap "$BOOTSTRAP_DIR"
@@ -112,6 +127,8 @@ timeout 60s git clone --depth 1 https://github.com/deepsea-wzq/wzq-claw-bootstra
 echo ">>> [4/4] 启动初始化脚本..."
 cd "$BOOTSTRAP_DIR"
 chmod +x init_openclaw.sh monitor_updates.sh manage_skills.sh
+
+report_step "initshell_ok"
 
 # 传递变量并执行
 ./init_openclaw.sh

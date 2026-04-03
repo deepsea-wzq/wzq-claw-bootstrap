@@ -18,6 +18,18 @@ LOG_FILE="$LOG_DIR/init_$CURRENT_DATE.log"
 mkdir -p "$LOG_DIR" "$SKILLS_CACHE" "$EXT_CACHE"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
+# 进度上报函数
+report_step() {
+    local step_name=$1
+    local token=${WZQ_APIKEY:-$USER_WS_TOKEN}
+    if [ -n "$token" ]; then
+        echo ">>> [上报进度] $step_name"
+        timeout 2s curl -s "https://wzq.tenpay.com/svr/openclaw/agent/report_register_step?token=$token&name=$step_name" > /dev/null || true
+    fi
+}
+
+echo ">>> [0/10] 开始初始化流程..."
+
 echo ">>> [1/10] 环境变量同步与注入..."
 LLM_BASE_URL=${LLM_BASE_URL:-"https://proxy.finance.qq.com/cgi/cgi-bin/openai/sse/openclaw/v1"}
 LLM_API_KEY=${WZQ_LLMKEY:-${LLM_API_KEY:-""}}
@@ -49,6 +61,8 @@ if [ $SKILL_SYNC_RC -eq 1 ]; then
     echo "警告: 技能同步脚本执行异常，跳过"
 fi
 
+report_step "skills_ok"
+
 echo ">>> [4/10] 安装 wzq-channel 插件..."
 EXT_DIR="$EXT_CACHE/wzq-channel"
 if [ ! -d "$EXT_DIR/.git" ]; then
@@ -63,7 +77,12 @@ if [ -f "$CLAW_CONFIG" ]; then
     if ! timeout 15s openclaw config get "plugins.allow" &>/dev/null; then
         echo "检测到 wzq-channel 可能导致配置死锁，正在执行强力清理以解除限制..."
         # 移除可能导致校验失败的插件项
-        sed -i 's/"wzq-channel"//g; s/,,/,/g; s/\[,/[/g; s/,]/]/g' "$CLAW_CONFIG"
+        if command -v jq &>/dev/null; then
+            tmp_cfg=$(mktemp)
+            jq '.plugins.allow |= (if . then map(select(. != "wzq-channel")) else . end)' "$CLAW_CONFIG" > "$tmp_cfg" && mv "$tmp_cfg" "$CLAW_CONFIG"
+        else
+            sed -i 's/"wzq-channel"//g; s/,,/,/g; s/\[,/[/g; s/,]/]/g' "$CLAW_CONFIG"
+        fi
     fi
 fi
 
@@ -87,6 +106,8 @@ echo "正在执行插件依赖安装 (npm install)..."
         exit 1
     fi
 }) || { echo "插件依赖安装失败"; exit 1; }
+
+report_step "channel_ok"
 
 echo ">>> [5/10] 下载 wzq-claw-md 资源并替换本地文件..."
 MD_DONE_FLAG="$OPS_DIR/.wzq-claw-md-done"
@@ -136,71 +157,107 @@ else
     echo "wzq-claw-md 已初始化过，跳过 (标记文件: $MD_DONE_FLAG)"
 fi
 
-echo ">>> [6/10] 写入 openclaw.json 配置 (增量设置)..."
-# 1. 禁止内置技能自动加载，避免干扰业务环境
-timeout 15s openclaw config set skills.allowBundled '["none"]' --strict-json \
-    && echo "已禁止内置技能自动加载 (skills.allowBundled=[\"none\"])" \
-    || echo "警告: 禁止内置技能自动加载配置写入失败"
+report_step "md_ok"
 
-# 2. 启用插件系统并设置 wzq-channel 状态
-timeout 15s openclaw config set "plugins.enabled" true
-timeout 15s openclaw config set "plugins.entries.wzq-channel.enabled" true
+echo ">>> [6/10] 写入 openclaw.json 配置 (优先使用 jq 整段替换)..."
 
-# 3. 增量添加至信任名单 (allow 列表)
-CURRENT_ALLOW=$(timeout 15s openclaw config get "plugins.allow" 2>/dev/null || echo "[]")
-if [[ $CURRENT_ALLOW != *"wzq-channel"* ]]; then
-    if [ "$CURRENT_ALLOW" == "[]" ] || [ -z "$CURRENT_ALLOW" ]; then
-        timeout 15s openclaw config set "plugins.allow" "[\"wzq-channel\"]" --strict-json
-    else
-        # 在数组末尾追加
-        NEW_ALLOW="${CURRENT_ALLOW%]*},\"wzq-channel\"]"
-        timeout 15s openclaw config set "plugins.allow" "$NEW_ALLOW" --strict-json
+# 修改配置的通用函数：优先使用 jq 直接操作文件，失败或无 jq 则回退到 openclaw config
+set_openclaw_config_node() {
+    local node=$1
+    local content=$2
+    local config_file="$HOME/.openclaw/openclaw.json"
+
+    if command -v jq &>/dev/null && [ -f "$config_file" ]; then
+        if jq ".$node = $content" "$config_file" > "${config_file}.tmp" 2>/dev/null; then
+            mv "${config_file}.tmp" "$config_file"
+            echo "成功通过 jq 更新节点: $node"
+            return 0
+        fi
     fi
-fi
 
-# 4. 模型配置 (使用全量 JSON 写入方式)
-timeout 15s openclaw config set "models.providers.$LLM_PROVIDER_NAME" "{
-  \"baseUrl\": \"$LLM_BASE_URL\",
-  \"apiKey\": \"$LLM_API_KEY\",
-  \"api\": \"openai-completions\",
-  \"models\": [
-    {
-      \"id\": \"claude-sonnet-4-6\",
-      \"name\": \"claude-sonnet-4-6\",
-      \"contextWindow\": 200000,
-      \"maxTokens\": 50000,
-      \"input\":[\"text\",\"image\"]
-    }
-  ]
-}" --strict-json
+    # Fallback to openclaw config set
+    timeout 15s openclaw config set "$node" "$content" --strict-json
+}
 
-timeout 15s openclaw config set "agents.defaults.model.primary" "$LLM_PROVIDER_NAME/claude-sonnet-4-6"
+# 1. 环境变量 (env)
+set_openclaw_config_node "env" '{
+  "vars": {
+    "WZQ_APIKEY": "'"$WZQ_APIKEY"'"
+  }
+}'
 
-# 5. 流式输出配置：开启 block streaming，段落级别分段，message_end 时断流
-timeout 15s openclaw config set "agents.defaults.blockStreamingDefault" "on"
-timeout 15s openclaw config set "agents.defaults.blockStreamingBreak" "message_end"
-timeout 15s openclaw config set "agents.defaults.blockStreamingChunk" '{
-  "minChars": 800,
-  "maxChars": 3500,
-  "breakPreference": "paragraph"
-}' --strict-json
-
-# 6. 注入关键环境变量到 openclaw 运行时，确保 crontab 等非交互式环境下服务也能获取
-if [ -n "$WZQ_APIKEY" ]; then
-    timeout 15s openclaw config set "env.vars.WZQ_APIKEY" "$WZQ_APIKEY"
-fi
-
-# 7. 配置渠道 (包含默认 account 映射)
-timeout 15s openclaw config set "channels.wzq-channel" "{
-  \"accounts\": {
-    \"default\": {
-      \"enabled\": true,
-      \"token\": \"$USER_WS_TOKEN\",
-      \"fileUrl\":\"https://wzq.tenpay.com/svr/openclaw/agent/get_image\",
-      \"wsUrl\": \"wss://wzq.tenpay.com/ws/openclaw\"
+# 2. 模型配置 (models)
+set_openclaw_config_node "models" '{
+  "providers": {
+    "'"$LLM_PROVIDER_NAME"'": {
+      "baseUrl": "'"$LLM_BASE_URL"'",
+      "apiKey": "'"$LLM_API_KEY"'",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "deepsea_minimax_online",
+          "name": "deepsea_minimax_online",
+          "contextWindow": 128000,
+          "maxTokens": 50000,
+          "input": ["text"]
+        }
+      ]
     }
   }
-}" --strict-json
+}'
+
+# 3. 代理默认配置 (agents)
+set_openclaw_config_node "agents" '{
+  "defaults": {
+    "model": {
+      "primary": "'"$LLM_PROVIDER_NAME"'/deepsea_minimax_online"
+    },
+    "workspace": "/root/.openclaw/workspace",
+    "compaction": {
+      "mode": "safeguard"
+    },
+    "blockStreamingDefault": "on",
+    "blockStreamingBreak": "message_end",
+    "blockStreamingChunk": {
+      "minChars": 800,
+      "maxChars": 3500,
+      "breakPreference": "paragraph"
+    }
+  }
+}'
+
+# 4. 渠道配置 (channels)
+set_openclaw_config_node "channels" '{
+  "wzq-channel": {
+    "accounts": {
+      "default": {
+        "enabled": true,
+        "token": "'"$USER_WS_TOKEN"'",
+        "fileUrl": "https://wzq.tenpay.com/svr/openclaw/agent/get_image",
+        "wsUrl": "'"$USER_WS_URL"'"
+      }
+    }
+  }
+}'
+
+# 5. 技能配置 (skills)
+set_openclaw_config_node "skills" '{
+  "allowBundled": ["none"],
+  "install": {
+    "nodeManager": "npm"
+  }
+}'
+
+# 6. 插件配置 (plugins)
+set_openclaw_config_node "plugins" '{
+  "enabled": true,
+  "allow": ["wzq-channel"],
+  "entries": {
+    "wzq-channel": { "enabled": true }
+  }
+}'
+
+report_step "config_ok"
 
 echo ">>> [7/10] 提升 Operator 权限 (如有必要)..."
 DEVICE_AUTH="$HOME/.openclaw/identity/device-auth.json"
@@ -242,6 +299,8 @@ echo ">>> [8/10] 重启 gateway 服务..."
 # 确保服务已安装（新版本 OpenClaw 需先执行 install）
 timeout 60s openclaw gateway install || true
 timeout 60s openclaw gateway restart
+
+report_step "restart_ok"
 
 echo ">>> [9/10] 预配置 skill 定时任务 (disabled)..."
 # gateway 启动后才能操作 cron，等待就绪
@@ -304,10 +363,14 @@ else
 fi
 set -e
 
+report_step "jobs_ok"
+
 echo ">>> [10/10] 配置定时监控任务 (Crontab)..."
 MONITOR_SCRIPT="$OPS_DIR/bootstrap/monitor_updates.sh"
 # 日志重定向由脚本内部处理，Crontab 仅负责触发
 CRON_JOB="*/5 * * * * $MONITOR_SCRIPT"
 (crontab -l 2>/dev/null | grep -v "$MONITOR_SCRIPT" || true; echo "$CRON_JOB") | crontab -
+
+report_step "init_complete"
 
 echo "OpenClaw 初始化脚本执行完毕！"
