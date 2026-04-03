@@ -229,9 +229,12 @@ fi
 # --- 4. 如果有更新，执行重启 ---
 if [ $NEED_RESTART -eq 1 ]; then
     echo "执行服务重启以应用更新..."
-    echo "[重启诊断] XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"
-    echo "[重启诊断] DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS"
     
+    # 同步最新 PATH (含 npm link 后的 NVM bin 路径) 到 systemd
+    if command -v systemctl &>/dev/null; then
+        systemctl --user import-environment PATH || true
+    fi
+
     timeout 60s openclaw gateway restart || echo "警告: gateway 重启超时或失败"
     echo "更新处理完成。"
 else

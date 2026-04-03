@@ -8,6 +8,14 @@ set -e
 
 # --- 业务运维目录配置 ---
 OPS_DIR="${WZQ_OPS_DIR:-$HOME/.wzq-claw-ops}"
+ENV_SH="$OPS_DIR/env.sh"
+
+# 加载业务变量与 Node.js 环境 (不依赖 .bashrc)
+if [ -f "$ENV_SH" ]; then
+    echo ">>> 加载环境配置: $ENV_SH"
+    source "$ENV_SH"
+fi
+
 LOG_DIR="$OPS_DIR/logs"
 SKILLS_CACHE="$OPS_DIR/cache/deepsea-skills"
 EXT_CACHE="$OPS_DIR/cache/extensions"
@@ -296,6 +304,10 @@ else
 fi
 
 echo ">>> [8/10] 重启 gateway 服务..."
+# 核心修复：确保 NVM/npm link 后的新 PATH 同步到 systemd user 会话，否则 gateway 找不到工具
+if command -v systemctl &>/dev/null; then
+    systemctl --user import-environment PATH || true
+fi
 # 确保服务已安装（新版本 OpenClaw 需先执行 install）
 timeout 60s openclaw gateway install || true
 timeout 60s openclaw gateway restart

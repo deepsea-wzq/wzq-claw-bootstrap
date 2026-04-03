@@ -11,6 +11,13 @@ set -e
 
 # --- 外部变量 (由调用者提供或使用默认值) ---
 OPS_DIR="${WZQ_OPS_DIR:-$HOME/.wzq-claw-ops}"
+ENV_SH="$OPS_DIR/env.sh"
+
+# 加载环境配置 (提供 Node.js/NVM 等路径)
+if [ -f "$ENV_SH" ]; then
+    source "$ENV_SH"
+fi
+
 SKILLS_CACHE_DIR="${SKILLS_CACHE_DIR:-$OPS_DIR/cache/deepsea-skills}"
 OPENCLAW_HOME="${OPENCLAW_HOME:-$HOME/.openclaw}"
 SKILLS_DIR="$OPENCLAW_HOME/skills"
@@ -70,6 +77,21 @@ deploy_repo_skills() {
         # 覆盖安装
         rm -rf "$SKILLS_DIR/$skill_id"
         cp -r "$skill_src_dir" "$SKILLS_DIR/$skill_id"
+
+        # 处理 Node.js 技能：安装并注册 Binary
+        if [ -f "$SKILLS_DIR/$skill_id/package.json" ]; then
+            echo "[ManageSkills] 正在处理 Node.js 技能 $skill_id (npm install + link)..."
+            (cd "$SKILLS_DIR/$skill_id" && {
+                if command -v npm &> /dev/null; then
+                    # 避免在 CI/脚本中出现各种 audit/fund 等冗余输出
+                    timeout 20s npm install --quiet --no-audit --no-fund
+                    timeout 10s npm link --quiet
+                elif command -v pnpm &> /dev/null; then
+                    timeout 20s pnpm install --prod --quiet
+                    # pnpm link --global 可能行为略有不同，视环境而定，此处主要支持 npm
+                fi
+            })
+        fi
     done
 
     # 2. 如果提供了旧列表，清理已移除的技能
@@ -163,7 +185,7 @@ for repo in "${SKILL_REPOS[@]}"; do
             git -C "$local_cache" remote set-url origin "$current_repo_url"
         fi
 
-        # 补偿部署：缓存已存在但技能未安装到 skills 目录时，先补装
+        # 补偿部署：缓存已存在但技能未安装或二进制未连接时，执行补装
         NEED_COMPENSATE=0
         while read -r skill_md; do
             skill_src_dir=$(dirname "$skill_md")
@@ -172,7 +194,33 @@ for repo in "${SKILL_REPOS[@]}"; do
             else
                 sid=$(basename "$skill_src_dir")
             fi
-            [ ! -d "$SKILLS_DIR/$sid" ] && NEED_COMPENSATE=1 && break
+
+            # 检查目录是否存在
+            if [ ! -d "$SKILLS_DIR/$sid" ]; then
+                NEED_COMPENSATE=1 && break
+            fi
+
+            # 如果有 package.json 且定义了 bin，检查命令是否可在 PATH 中找到
+            if [ -f "$SKILLS_DIR/$sid/package.json" ]; then
+                # 提取 bin 定义中的命令名
+                cmds=""
+                if command -v jq &>/dev/null; then
+                    bin_data=$(jq -r '.bin' "$SKILLS_DIR/$sid/package.json")
+                    if [ "$bin_data" != "null" ]; then
+                        if [[ "$bin_data" == "{"* ]]; then
+                            cmds=$(jq -r '.bin | keys[]' "$SKILLS_DIR/$sid/package.json")
+                        else
+                            cmds=$(jq -r '.name' "$SKILLS_DIR/$sid/package.json")
+                        fi
+                        # 检查这些命令是否在当前 PATH 中可用
+                        for cmd in $cmds; do
+                            if ! command -v "$cmd" &>/dev/null; then
+                                NEED_COMPENSATE=1 && break 2
+                            fi
+                        done
+                    fi
+                fi
+            fi
         done < <(find "$local_cache" -name "SKILL.md")
 
         if [ $NEED_COMPENSATE -eq 1 ]; then
