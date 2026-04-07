@@ -152,8 +152,8 @@ if [ -d "$MD_GIT_REPO/.git" ]; then
     # 步骤 1: 如果检测到 Git 有更新，生成“旧版本”指纹清单并拉取
     if check_git_update "$MD_GIT_REPO" && [ ! -f "$MD_MANIFEST" ]; then
         echo "[MD同步] 检测到文档仓库有新版本，正在生成待更新清单..."
-        # 记录旧版文件的 MD5 (格式: hash path)
-        (cd "$MD_GIT_REPO" && find . -name "*.md" -not -path "*/.*" -exec md5sum {} +) > "$MD_MANIFEST"
+        # 记录旧版文件的 MD5 (格式: hash path)，排除 BOOTSTRAP.md
+        (cd "$MD_GIT_REPO" && find . -name "*.md" -not -path "*/.*" -not -name "BOOTSTRAP.md" -exec md5sum {} +) > "$MD_MANIFEST"
         
         echo "[MD同步] 正在拉取远程更新..."
         timeout 60s git -C "$MD_GIT_REPO" pull --quiet || { echo "[MD同步] 警告: Git pull 失败"; rm -f "$MD_MANIFEST"; }
@@ -168,8 +168,8 @@ if [ -d "$MD_GIT_REPO/.git" ]; then
             OLD_MD5_MAP["$clean_path"]="$m_hash"
         done < "$MD_MANIFEST"
 
-        # 遍历当前仓库中的所有最新文件 (使用 cd 避免绝对路径中的隐藏目录干扰 find 过滤)
-        (cd "$MD_GIT_REPO" && find . -name "*.md" -not -path "*/.*") | while read -r rel_dot_path; do
+        # 遍历当前仓库中的所有最新文件 (排除 BOOTSTRAP.md)
+        (cd "$MD_GIT_REPO" && find . -name "*.md" -not -path "*/.*" -not -name "BOOTSTRAP.md") | while read -r rel_dot_path; do
             rel_path="${rel_dot_path#./}"
             md_file="$MD_GIT_REPO/$rel_path"
             target_file="$MD_WORKSPACE_DIR/$rel_path"
