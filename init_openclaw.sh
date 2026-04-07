@@ -203,8 +203,8 @@ set_openclaw_config_node "models" '{
       "api": "openai-completions",
       "models": [
         {
-          "id": "deepsea_minimax_online",
-          "name": "deepsea_minimax_online",
+          "id": "GLM_5.0",
+          "name": "GLM_5.0",
           "contextWindow": 128000,
           "maxTokens": 50000,
           "input": ["text"]
@@ -218,7 +218,7 @@ set_openclaw_config_node "models" '{
 set_openclaw_config_node "agents" '{
   "defaults": {
     "model": {
-      "primary": "'"$LLM_PROVIDER_NAME"'/deepsea_minimax_online"
+      "primary": "'"$LLM_PROVIDER_NAME"'/GLM_5.0"
     },
     "workspace": "/root/.openclaw/workspace",
     "compaction": {
